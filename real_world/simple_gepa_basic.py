@@ -1,0 +1,194 @@
+"""
+Minimal GEPA example (v3+):
+
+- Defines a tiny DSPy program (Predict-based QA)
+- Implements a GEPA-friendly metric (score + feedback)
+- Runs GEPA with small train/val sets
+- Prints pre/post optimization scores
+
+Usage:
+  - Dry run with DummyLM (no external calls):
+      python real_world/simple_gepa_basic.py --dummy
+
+  - Real LM:
+      1) Replace LM configuration below with your provider/model.
+      2) Run: python real_world/simple_gepa_basic.py
+
+Required GEPA compile args shown here:
+  - metric(gold, pred, trace, pred_name, pred_trace)
+  - exactly one of: auto | max_metric_calls | max_full_evals
+  - reflection_lm or instruction_proposer
+  - trainset (and recommended valset)
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from loguru import logger
+import dspy
+from dspy import Example
+
+
+class SimpleQA(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.predict = dspy.Predict("question -> answer")
+
+    def forward(self, question: str):
+        return self.predict(question=question)
+
+
+def qa_metric_with_feedback(gold: Example, pred: dspy.Prediction, trace=None, pred_name: str | None = None, pred_trace=None):
+    """
+    GEPA-friendly metric: returns either a float or a dict-like Prediction with `score` and `feedback`.
+
+    - gold.answer vs pred.answer exact match (case-insensitive)
+    - Provide simple, useful textual feedback
+    - pred_name/pred_trace are provided by GEPA for predictor-level reflection (not required to use)
+    """
+    gold_ans = str(getattr(gold, "answer", "")).strip().lower()
+    pred_ans = str(getattr(pred, "answer", "")).strip().lower()
+
+    correct = 1.0 if gold_ans == pred_ans and gold_ans != "" else 0.0
+
+    if correct:
+        fb = "Correct answer."
+    else:
+        fb = f"Expected '{gold_ans}' but got '{pred_ans}'."
+        if pred_name is not None:
+            fb += f" Target predictor: {pred_name}."
+
+    # Return a plain float for standard evaluation (Evaluate),
+    # and (score, feedback) when GEPA asks for predictor/program feedback.
+    if pred_name is None and pred_trace is None:
+        return correct
+    return dspy.Prediction(score=correct, feedback=fb)
+
+
+def build_tiny_dataset():
+    # Keep it extremely small and simple; extend as you like.
+    trainset = [
+        Example(question="What is the color of the sky?", answer="blue").with_inputs("question"),
+        Example(question="2 + 2 = ?", answer="4").with_inputs("question"),
+    ]
+    valset = [
+        Example(question="What color is the ocean on a clear day?", answer="blue").with_inputs("question"),
+        Example(question="What is 3 plus 1?", answer="4").with_inputs("question"),
+    ]
+    return trainset, valset
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dummy", action="store_true", help="Use DummyLM for a local dry run")
+    parser.add_argument("--log-level", default="INFO", help="Log level for loguru (e.g., DEBUG, INFO, SUCCESS, WARNING)")
+    args = parser.parse_args()
+
+    # Configure loguru
+    logger.remove()
+    logger.add(sys.stderr, level=str(args.log_level).upper())
+
+    logger.info("Starting minimal GEPA example (v3+)")
+    logger.debug("DSPy version: {}", getattr(dspy, "__version__", "unknown"))
+
+    # 1) Build a tiny program and dataset
+    program = SimpleQA()
+    trainset, valset = build_tiny_dataset()
+    logger.info("Built tiny dataset — train: {}, val: {}", len(trainset), len(valset))
+    logger.debug("Train sample: {}", trainset[0] if trainset else None)
+    logger.debug("Val sample: {}", valset[0] if valset else None)
+
+    # 2) LM configuration
+    #    - For a real LM, replace the next block with your provider/model
+    #    - Example:
+    #        task_lm = dspy.LM(model="gpt-4o-mini", temperature=0.0)
+    #        reflection_lm = dspy.LM(model="gpt-4o", temperature=0.7)
+    #        dspy.settings.configure(lm=task_lm)
+    #
+    if args.dummy:
+        logger.info("Configuring DummyLM for both task and reflection (no external calls).")
+        from dspy.utils.dummies import DummyLM
+
+        # A short sequence of answers for our tiny set
+        # The main LM is used to answer questions
+        task_lm = DummyLM([
+            {"answer": "blue"},
+            {"answer": "4"},
+            {"answer": "blue"},
+            {"answer": "4"},
+            {"answer": "blue"},
+        ])
+        dspy.settings.configure(lm=task_lm)
+        lm_mode = "dict" if isinstance(task_lm.answers, dict) else "sequence"
+        logger.debug("Dummy task LM configured (mode={}, follow_examples={}).", lm_mode, task_lm.follow_examples)
+
+        # Reflection LM proposes improved instructions
+        reflection_lm = DummyLM([
+            {"improved_instruction": "Answer succinctly and factually."},
+            {"improved_instruction": "Provide direct answers."},
+            {"improved_instruction": "Use concise phrasing and avoid hedging."},
+        ])
+    else:
+        logger.warning("Real LM mode selected, but configuration is a placeholder in this example.")
+        # Placeholder: set your real models here
+        # task_lm = dspy.LM(model="<your-task-model>", temperature=0.0)
+        # reflection_lm = dspy.LM(model="<your-strong-reflection-model>", temperature=0.7)
+        # dspy.settings.configure(lm=task_lm)
+        raise RuntimeError(
+            "Please run with --dummy for a local dry run, or edit LM configuration for a real provider."
+        )
+
+    # 3) Evaluate baseline
+    from dspy.evaluate import Evaluate
+
+    evaluator = Evaluate(devset=valset, metric=qa_metric_with_feedback, display_progress=False)
+    logger.info("Running baseline evaluation on {} validation examples...", len(valset))
+    baseline = evaluator(program)
+    logger.success("Baseline score: {}", baseline.score)
+
+    # 4) Run GEPA (choose one of: auto | max_metric_calls | max_full_evals)
+    logger.info(
+        "Configuring GEPA (auto={}, track_stats={}, reflection_lm={})",
+        "light",
+        True,
+        "yes" if 'reflection_lm' in locals() and reflection_lm is not None else "no",
+    )
+
+    gepa = dspy.GEPA(
+        metric=qa_metric_with_feedback,
+        auto="light",  # or set: max_metric_calls=..., or max_full_evals=...
+        reflection_lm=reflection_lm,
+        track_stats=True,
+    )
+
+    logger.info("Starting GEPA compile with train={} and val={}...", len(trainset), len(valset))
+    optimized = gepa.compile(program, trainset=trainset, valset=valset)
+    logger.success("GEPA compile finished.")
+
+    # 5) Evaluate post-optimization
+    logger.info("Evaluating optimized program on validation set...")
+    improved = evaluator(optimized)
+    logger.success("Post-GEPA score: {}", improved.score)
+
+    delta = round((improved.score - baseline.score), 2)
+    if delta > 0:
+        logger.success("Improvement vs baseline: +{}", delta)
+    else:
+        logger.warning("No improvement vs baseline (delta = {}).", delta)
+
+    # Optional: inspect run details (Pareto candidates, scores, etc.)
+    if hasattr(optimized, "detailed_results"):
+        dr = optimized.detailed_results
+        logger.info("GEPA proposed {} candidates.", len(dr.candidates))
+        if dr.val_aggregate_scores:
+            best_score = dr.val_aggregate_scores[dr.best_idx]
+            logger.info("Best validation score (Pareto selection): {}", best_score)
+
+            # Show a short summary of top-3 scores
+            top_scores = sorted(dr.val_aggregate_scores, reverse=True)[:3]
+            logger.debug("Top scores (top-3): {}", top_scores)
+
+
+if __name__ == "__main__":
+    main()

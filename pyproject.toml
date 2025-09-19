@@ -171,6 +171,20 @@ indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
 
+[tool.uv.sources]
+dspy = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "loguru>=0.7.3",
+    "pytest-asyncio>=1.0.0",
+    "pytest>=8.4.0",
+    "pytest-cov>=7.0.0",
+    "pytest-mock>=3.14.1",
+    "dspy",
+    "gepa>=0.0.12",
+]
+
 [tool.ruff.lint.isort]
 known-first-party = ["dspy"]
 
