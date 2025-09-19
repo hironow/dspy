@@ -67,14 +67,15 @@ def qa_metric_with_feedback(gold: Example, pred: dspy.Prediction, trace=None, pr
 
 
 def build_tiny_dataset():
-    # Keep it extremely small and simple; extend as you like.
+    """日本語のごく簡単なQAデータセット（数学を避ける）。"""
+    # 小規模でシンプル。必要に応じて拡張してください。
     trainset = [
-        Example(question="What is the color of the sky?", answer="blue").with_inputs("question"),
-        Example(question="2 + 2 = ?", answer="4").with_inputs("question"),
+        Example(question="空の色は何色ですか？", answer="青").with_inputs("question"),
+        Example(question="バナナの色は何色ですか？", answer="黄色").with_inputs("question"),
     ]
     valset = [
-        Example(question="What color is the ocean on a clear day?", answer="blue").with_inputs("question"),
-        Example(question="What is 3 plus 1?", answer="4").with_inputs("question"),
+        Example(question="晴れた日の海の色は何色ですか？", answer="青").with_inputs("question"),
+        Example(question="熟したバナナの色は何色ですか？", answer="黄色").with_inputs("question"),
     ]
     return trainset, valset
 
@@ -94,6 +95,10 @@ def main():
 
     # 1) Build a tiny program and dataset
     program = SimpleQA()
+    # 日本語のタスク説明（プロンプト説明）を付与
+    program.predict.signature = program.predict.signature.with_instructions(
+        "次の日本語の質問に、短く正確に回答してください。回答は名詞一語を目指してください。"
+    )
     trainset, valset = build_tiny_dataset()
     logger.info("Built tiny dataset — train: {}, val: {}", len(trainset), len(valset))
     logger.debug("Train sample: {}", trainset[0] if trainset else None)
@@ -110,24 +115,24 @@ def main():
         logger.info("Configuring DummyLM for both task and reflection (no external calls).")
         from dspy.utils.dummies import DummyLM
 
-        # A short sequence of answers for our tiny set
+        # A short sequence of answers for our tiny set (日本語)
         # The main LM is used to answer questions
         task_lm = DummyLM([
-            {"answer": "blue"},
-            {"answer": "4"},
-            {"answer": "blue"},
-            {"answer": "4"},
-            {"answer": "blue"},
+            {"answer": "青"},
+            {"answer": "黄色"},
+            {"answer": "青"},
+            {"answer": "黄色"},
+            {"answer": "青"},
         ])
         dspy.settings.configure(lm=task_lm)
         lm_mode = "dict" if isinstance(task_lm.answers, dict) else "sequence"
         logger.debug("Dummy task LM configured (mode={}, follow_examples={}).", lm_mode, task_lm.follow_examples)
 
-        # Reflection LM proposes improved instructions
+        # Reflection LM proposes improved instructions（日本語）
         reflection_lm = DummyLM([
-            {"improved_instruction": "Answer succinctly and factually."},
-            {"improved_instruction": "Provide direct answers."},
-            {"improved_instruction": "Use concise phrasing and avoid hedging."},
+            {"improved_instruction": "簡潔かつ事実に基づいて回答してください。"},
+            {"improved_instruction": "できるだけ直接的に回答してください。"},
+            {"improved_instruction": "冗長表現を避け、簡潔な表現を用いてください。"},
         ])
     else:
         logger.warning("Real LM mode selected, but configuration is a placeholder in this example.")

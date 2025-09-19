@@ -10,6 +10,7 @@ Files:
   - Prints pre/post optimization scores
   - Uses `loguru` for clear, step-by-step logging
   - Prints a compact ASCII table of GEPA candidates (Pareto summary)
+  - Dataset (質問/回答)とプロンプトの説明は日本語（数学問題は避けています）
 
 Prerequisites:
 - DSPy installed: `pip install dspy`
@@ -46,6 +47,7 @@ Notes:
 - `teacher` is currently not supported by GEPA in DSPy v3.
 - This example uses `loguru` for human-friendly logs. Pass `--log-level` (e.g., `DEBUG`, `INFO`) to control verbosity.
 - After optimization, a compact ASCII table summarizes the top candidates (idx, score, coverage, discovery calls).
+ - 本例の対象物（データセットの質問/回答、プロンプトの説明）は日本語です。英語に戻したい場合は `build_tiny_dataset()` と `with_instructions(...)` を編集してください。
 
 Next steps / extensions:
 - Swap the metric to a task-specific one (e.g., semantic similarity, schema validation, code execution success, etc.)
