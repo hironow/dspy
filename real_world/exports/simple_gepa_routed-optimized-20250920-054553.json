@@ -1,0 +1,116 @@
+{
+  "route": {
+    "traces": [],
+    "train": [],
+    "demos": [],
+    "signature": {
+      "instructions": "与えられた質問の意図に基づき、'db' / 'rag' / 'graph' から最も適切な情報源を一つ選んで 'source' に出力してください。",
+      "fields": [
+        {
+          "prefix": "Query:",
+          "description": "${query}"
+        },
+        {
+          "prefix": "Source:",
+          "description": "${source}"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "from_db": {
+    "traces": [],
+    "train": [],
+    "demos": [],
+    "signature": {
+      "instructions": "DBからクエリに対応する短いテキストを返してください（例: メールアドレスなど）。",
+      "fields": [
+        {
+          "prefix": "Query:",
+          "description": "${query}"
+        },
+        {
+          "prefix": "Text:",
+          "description": "${text}"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "from_rag": {
+    "traces": [],
+    "train": [],
+    "demos": [],
+    "signature": {
+      "instructions": "RAG（外部知識）からクエリに対応する短い要約テキストを返してください。",
+      "fields": [
+        {
+          "prefix": "Query:",
+          "description": "${query}"
+        },
+        {
+          "prefix": "Text:",
+          "description": "${text}"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "from_graph": {
+    "traces": [],
+    "train": [],
+    "demos": [],
+    "signature": {
+      "instructions": "GraphDBからクエリに対応する関係情報を短く記述してください。",
+      "fields": [
+        {
+          "prefix": "Query:",
+          "description": "${query}"
+        },
+        {
+          "prefix": "Text:",
+          "description": "${text}"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "rerank": {
+    "traces": [],
+    "train": [],
+    "demos": [],
+    "signature": {
+      "instructions": "与えられた候補（db_text, rag_text, graph_text）の中から、最も質問に適合する一つを 'text' に出力してください。",
+      "fields": [
+        {
+          "prefix": "Query:",
+          "description": "${query}"
+        },
+        {
+          "prefix": "Db Text:",
+          "description": "${db_text}"
+        },
+        {
+          "prefix": "Rag Text:",
+          "description": "${rag_text}"
+        },
+        {
+          "prefix": "Graph Text:",
+          "description": "${graph_text}"
+        },
+        {
+          "prefix": "Text:",
+          "description": "${text}"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "metadata": {
+    "dependency_versions": {
+      "python": "3.12",
+      "dspy": "3.0.3",
+      "cloudpickle": "3.1"
+    }
+  }
+}
