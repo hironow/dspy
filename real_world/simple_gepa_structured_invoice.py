@@ -199,11 +199,44 @@ def invoice_metric_with_feedback(
             "Normalizer: Convert date to ISO 'YYYY-MM-DD', currency symbol to ISO code (e.g., '¥' -> 'JPY'), "
             "and ensure amount is numeric."
         )
-        # Highlight specific normalizations
-        if not _is_iso_date(pred_date) and _safe_str(getattr(p_inputs, "date", "")):
-            fb.append(f"Date normalization needed: '{p_inputs['date']}' -> 'YYYY-MM-DD'.")
-        if pred_currency not in ISO_CURRENCIES and _safe_str(getattr(p_inputs, "currency", "")):
-            fb.append(f"Currency normalization needed: '{p_inputs['currency']}' -> ISO code like 'JPY'.")
+        # Highlight specific normalizations with from -> to suggestions (bounded, concrete)
+        src_date = None
+        src_curr = None
+        src_amt = None
+        if isinstance(p_inputs, dict):
+            src_date = _safe_str(p_inputs.get("date", ""))
+            src_curr = _safe_str(p_inputs.get("currency", ""))
+            src_amt = p_inputs.get("amount", None)
+
+        # Date normalization
+        if not _is_iso_date(pred_date):
+            if gold_date:
+                fb.append(f"Date normalization: '{src_date or pred_date}' -> '{gold_date}' (ISO).")
+            elif src_date or pred_date:
+                fb.append(f"Date normalization: '{src_date or pred_date}' -> 'YYYY-MM-DD' (ISO).")
+
+        # Currency normalization
+        if pred_currency not in ISO_CURRENCIES:
+            target_cur = gold_currency or "ISO code like 'JPY'"
+            fb.append(
+                f"Currency normalization: '{(src_curr or pred_currency) or ''}' -> '{target_cur}'."
+            )
+
+        # Amount normalization
+        if pred_amount is None:
+            normalized_hint = None
+            if isinstance(src_amt, str) and src_amt:
+                # Strip non-numeric hints (keep digits, dot, minus)
+                stripped = re.sub(r"[^0-9.\-]", "", src_amt)
+                parsed = _to_float(stripped)
+                if parsed is not None:
+                    normalized_hint = parsed
+            if normalized_hint is None and gold_amount is not None:
+                normalized_hint = gold_amount
+            if normalized_hint is not None:
+                fb.append(f"Amount normalization: '{_safe_str(src_amt)}' -> {normalized_hint} (numeric).")
+            else:
+                fb.append("Amount normalization: ensure a numeric float (e.g., '7,890' -> 7890.0).")
 
     else:
         fb.append("Program: Maintain schema validity across steps.")
@@ -349,4 +382,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
