@@ -30,9 +30,9 @@ import os
 import time
 import json
 from loguru import logger
-from dspy.adapters.json_adapter import JSONAdapter
 import dspy
 from dspy import Example
+from dspy.adapters.json_adapter import JSONAdapter
 
 
 class SimpleQA(dspy.Module):
@@ -146,12 +146,15 @@ def main():
         from dspy.utils.dummies import DummyLM
         import itertools
 
-        def infinite_task_responses():
+        # Separate generators per predictor to ensure outputs always match
+        # the expected fields for that predictor's signature.
+        def infinite_rewrite_responses():
+            while True:
+                yield {"refined_question": "簡潔な質問"}
+
+        def infinite_predict_responses():
             i = 0
             while True:
-                # rewrite -> refined_question
-                yield {"refined_question": "簡潔な質問"}
-                # predict -> answer (交互に青/黄色)
                 yield {"answer": ("青" if (i % 2 == 0) else "黄色")}
                 i += 1
 
@@ -165,14 +168,15 @@ def main():
                 yield {"improved_instruction": p}
 
         # Dedicated LMs per-predictor so outputs always match expected fields
-        rewrite_lm = DummyLM(infinite_task_responses(), adapter=JSONAdapter())
-        predict_lm = DummyLM(infinite_task_responses(), adapter=JSONAdapter())
+        rewrite_lm = DummyLM(infinite_rewrite_responses(), adapter=JSONAdapter())
+        predict_lm = DummyLM(infinite_predict_responses(), adapter=JSONAdapter())
         # Attach to program so forward() can use them with dspy.context
         program._rewrite_lm = rewrite_lm
         program._predict_lm = predict_lm
-        # Configure a default LM (not used inside predictors because of per-predictor contexts)
-        dspy.settings.configure(lm=predict_lm)
-        logger.debug("Dummy per-predictor LMs configured with JSONAdapter (infinite seq).")
+        # Configure default LM and adapter (JSONAdapter) to match DummyLM outputs
+        # Note: predictors use per-predictor contexts above, but adapter must match parsing format.
+        dspy.settings.configure(lm=predict_lm, adapter=JSONAdapter())
+        logger.debug("Dummy per-predictor LMs configured with JSONAdapter (infinite seq). Global adapter set to JSONAdapter.")
 
         reflection_lm = DummyLM(infinite_reflection_responses(), adapter=JSONAdapter())
     else:
@@ -194,10 +198,10 @@ def main():
     preds = len(program.predictors())
     baseline_calls = len(valset) * preds
     logger.info(
-        "PREDICTIVE-NOTE [CALLSITE]: 実APIではここで 'Evaluate(program)' -> 'program(**example.inputs())' -> タスクLM への推論リクエストが発生します。"
+        "PREDICTIVE-NOTE [CALLSITE]: 実APIではここで 'Evaluate(program)' が各例を評価し、その過程で 'program(**example.inputs())' により各 Predictor ぶんタスクLM への推論が発生します。"
     )
     logger.info(
-        "PREDICTIVE-NOTE: 想定呼び出し回数 ≈ バリデーション件数 × Predictor数 = {} × {} = {}",
+        "PREDICTIVE-NOTE: 推定タスクLM呼び出し回数 (baseline) ≈ バリデーション件数 × Predictor数 = {} × {} = {}",
         len(valset),
         preds,
         baseline_calls,
@@ -317,7 +321,7 @@ def main():
             )
         else:
             logger.info(
-                "PREDICTIVE-NOTE: 実APIではGEPA最適化中にタスクLMへの評価/メトリック呼び出しが概ね ~{} 回（auto='{}'想定）発生します。",
+                "PREDICTIVE-NOTE: 実APIではGEPA最適化中に評価関数 (metric) の呼び出しが概ね ~{} 回（auto='{}'想定）発生します。",
                 approx_budget,
                 auto_mode if auto_mode is not None else "manual",
             )
@@ -342,7 +346,7 @@ def main():
         )
 
     logger.info(
-        "PREDICTIVE-NOTE [CALLSITE]: 実APIではGEPA内部で 'adapter.evaluate(...)' がタスクLMを呼び、'propose_new_texts(...)' が反射LM(または提案器)を呼び出します。"
+        "PREDICTIVE-NOTE [CALLSITE]: 実APIではGEPA内部で 'adapter.evaluate(...)' がプログラムを評価（タスクLMを呼び出し）、'propose_new_texts(...)' が反射LM(または提案器)を呼び出します。"
     )
     if N is not None:
         logger.info(
@@ -350,7 +354,7 @@ def main():
             N,
         )
     logger.info(
-        "PREDICTIVE-NOTE: reflection_minibatch_size={}, candidate_n={}, predictor_count={}",
+        "PREDICTIVE-NOTE: reflection_minibatch_size={}, num_candidates(auto)={}, predictor_count={}",
         getattr(gepa, "reflection_minibatch_size", None),
         n_candidates,
         preds,
@@ -398,10 +402,21 @@ def main():
 
         # Predictive post-hoc notes if real APIs were used
         if getattr(dr, "total_metric_calls", None) is not None:
+            # Recorded metric_calls and a derived estimate of task LM calls
             logger.info(
-                "PREDICTIVE-NOTE: 実APIならタスクLMへのメトリック呼び出し総数はおよそ {} 回（記録ベース）となります。",
+                "PREDICTIVE-NOTE: metric_calls（評価関数の呼び出し回数, 記録値） ≈ {}",
                 dr.total_metric_calls,
             )
+            try:
+                est_task_calls = dr.total_metric_calls * preds
+                logger.info(
+                    "PREDICTIVE-NOTE: 推定タスクLM呼び出し回数（記録値に基づく） ≈ metric_calls × Predictor数 = {} × {} ≈ {}",
+                    dr.total_metric_calls,
+                    preds,
+                    est_task_calls,
+                )
+            except Exception:
+                pass
         if getattr(dr, "num_full_val_evals", None) is not None:
             logger.info(
                 "PREDICTIVE-NOTE: フル評価（全Valでの集計）回数はおよそ {} 回（記録ベース）。",
