@@ -30,6 +30,7 @@ import os
 import time
 import json
 from loguru import logger
+from dspy.adapters.json_adapter import JSONAdapter
 import dspy
 from dspy import Example
 
@@ -42,11 +43,21 @@ class SimpleQA(dspy.Module):
         self.predict = dspy.Predict("question -> answer")
 
     def forward(self, question: str):
-        # 1) 質問の簡略化/言い換え
-        rew = self.rewrite(question=question)
+        # 1) 質問の簡略化/言い換え（rewrite専用LMがあればそれを使う）
+        rw_lm = getattr(self, "_rewrite_lm", None)
+        if rw_lm is not None:
+            with dspy.context(lm=rw_lm):
+                rew = self.rewrite(question=question)
+        else:
+            rew = self.rewrite(question=question)
         rq = getattr(rew, "refined_question", None) or question
-        # 2) 言い換え済みの質問で最終回答
-        return self.predict(question=rq)
+        # 2) 言い換え済みの質問で最終回答（predict専用LMがあればそれを使う）
+        pr_lm = getattr(self, "_predict_lm", None)
+        if pr_lm is not None:
+            with dspy.context(lm=pr_lm):
+                return self.predict(question=rq)
+        else:
+            return self.predict(question=rq)
 
 
 def qa_metric_with_feedback(gold: Example, pred: dspy.Prediction, trace=None, pred_name: str | None = None, pred_trace=None):
@@ -133,25 +144,37 @@ def main():
     if args.dummy:
         logger.info("Configuring DummyLM for both task and reflection (no external calls).")
         from dspy.utils.dummies import DummyLM
+        import itertools
 
-        # 2つのPredictor呼び出しに対応するため、出力フィールドを交互に用意
-        # 例: rewrite -> refined_question, predict -> answer
-        task_responses = []
-        for i in range(60):  # 少し多めに用意
-            task_responses.append({"refined_question": "簡潔な質問"})
-            task_responses.append({"answer": ("青" if i % 2 == 0 else "黄色")})
+        def infinite_task_responses():
+            i = 0
+            while True:
+                # rewrite -> refined_question
+                yield {"refined_question": "簡潔な質問"}
+                # predict -> answer (交互に青/黄色)
+                yield {"answer": ("青" if (i % 2 == 0) else "黄色")}
+                i += 1
 
-        task_lm = DummyLM(task_responses)
-        dspy.settings.configure(lm=task_lm)
-        lm_mode = "dict" if isinstance(task_lm.answers, dict) else "sequence"
-        logger.debug("Dummy task LM configured (mode={}, follow_examples={}).", lm_mode, task_lm.follow_examples)
+        def infinite_reflection_responses():
+            phrases = [
+                "簡潔かつ事実に基づいて回答してください。",
+                "できるだけ直接的に回答してください。",
+                "冗長表現を避け、簡潔な表現を用いてください。",
+            ]
+            for p in itertools.cycle(phrases):
+                yield {"improved_instruction": p}
 
-        # Reflection LM proposes improved instructions（日本語）
-        reflection_lm = DummyLM([
-            {"improved_instruction": "簡潔かつ事実に基づいて回答してください。"},
-            {"improved_instruction": "できるだけ直接的に回答してください。"},
-            {"improved_instruction": "冗長表現を避け、簡潔な表現を用いてください。"},
-        ])
+        # Dedicated LMs per-predictor so outputs always match expected fields
+        rewrite_lm = DummyLM(infinite_task_responses(), adapter=JSONAdapter())
+        predict_lm = DummyLM(infinite_task_responses(), adapter=JSONAdapter())
+        # Attach to program so forward() can use them with dspy.context
+        program._rewrite_lm = rewrite_lm
+        program._predict_lm = predict_lm
+        # Configure a default LM (not used inside predictors because of per-predictor contexts)
+        dspy.settings.configure(lm=predict_lm)
+        logger.debug("Dummy per-predictor LMs configured with JSONAdapter (infinite seq).")
+
+        reflection_lm = DummyLM(infinite_reflection_responses(), adapter=JSONAdapter())
     else:
         logger.warning("Real LM mode selected, but configuration is a placeholder in this example.")
         # Placeholder: set your real models here
@@ -165,7 +188,7 @@ def main():
     # 3) Evaluate baseline
     from dspy.evaluate import Evaluate
 
-    evaluator = Evaluate(devset=valset, metric=qa_metric_with_feedback, display_progress=False)
+    evaluator = Evaluate(devset=valset, metric=qa_metric_with_feedback, display_progress=False, num_threads=1)
     logger.info("Running baseline evaluation on {} validation examples...", len(valset))
     # Predictive notes for real API mode
     preds = len(program.predictors())
@@ -183,19 +206,30 @@ def main():
     logger.success("Baseline score: {}", baseline.score)
 
     # 4) Run GEPA (choose one of: auto | max_metric_calls | max_full_evals)
+    # Configure GEPA (smaller budget in dummy mode to avoid long runs)
+    auto_mode_for_log = "manual" if args.dummy else "light"
     logger.info(
         "Configuring GEPA (auto={}, track_stats={}, reflection_lm={})",
-        "light",
+        auto_mode_for_log,
         True,
         "yes" if 'reflection_lm' in locals() and reflection_lm is not None else "no",
     )
 
-    gepa = dspy.GEPA(
-        metric=qa_metric_with_feedback,
-        auto="light",  # or set: max_metric_calls=..., or max_full_evals=...
-        reflection_lm=reflection_lm,
-        track_stats=True,
-    )
+    if args.dummy:
+        gepa = dspy.GEPA(
+            metric=qa_metric_with_feedback,
+            max_metric_calls=60,
+            reflection_lm=reflection_lm,
+            reflection_minibatch_size=1,
+            track_stats=True,
+        )
+    else:
+        gepa = dspy.GEPA(
+            metric=qa_metric_with_feedback,
+            auto="light",  # or set: max_metric_calls=..., or max_full_evals=...
+            reflection_lm=reflection_lm,
+            track_stats=True,
+        )
 
     # Predictive notes for GEPA in real API mode
     # Determine num_candidates from GEPA auto mode when possible
@@ -261,6 +295,8 @@ def main():
         approx_budget = gepa.max_full_evals * (len(trainset) + len(valset))
     elif getattr(gepa, "max_metric_calls", None) is not None:
         approx_budget = gepa.max_metric_calls
+        approx_budget_min = approx_budget
+        approx_budget_max = approx_budget
 
     # Rough estimate of trials N (mirrors internal logic approximately)
     N = None
@@ -416,14 +452,34 @@ def main():
 
         # Save detailed_results (if any) as JSON for later inspection
         if hasattr(optimized, "detailed_results") and optimized.detailed_results is not None:
+            dr_path = os.path.join(args.save_dir, f"{args.save_prefix}-gepa-details-{stamp}.json")
             try:
                 dr_dict = optimized.detailed_results.to_dict()
-                dr_path = os.path.join(args.save_dir, f"{args.save_prefix}-gepa-details-{stamp}.json")
+            except Exception:
+                # Fallback: minimal, serializable snapshot
+                dr = optimized.detailed_results
+                try:
+                    cand_texts = []
+                    for cand in getattr(dr, "candidates", []) or []:
+                        if hasattr(cand, "named_predictors"):
+                            cand_texts.append({name: p.signature.instructions for name, p in cand.named_predictors()})
+                        elif isinstance(cand, dict):
+                            cand_texts.append(cand)
+                        else:
+                            cand_texts.append(str(cand))
+                    dr_dict = {
+                        "candidates": cand_texts,
+                        "val_aggregate_scores": getattr(dr, "val_aggregate_scores", []),
+                        "discovery_eval_counts": getattr(dr, "discovery_eval_counts", []),
+                        "seed": getattr(dr, "seed", None),
+                    }
+                except Exception as e2:
+                    logger.warning("Failed to build fallback GEPA details: {}", e2)
+                    dr_dict = None
+            if dr_dict is not None:
                 with open(dr_path, "w", encoding="utf-8") as f:
                     json.dump(dr_dict, f, ensure_ascii=False, indent=2)
                 logger.success("Saved GEPA detailed results: {}", dr_path)
-            except Exception as e:
-                logger.warning("Failed to save GEPA detailed results: {}", e)
     except Exception as e:
         logger.warning("Failed to save DSPy programs: {}", e)
 
