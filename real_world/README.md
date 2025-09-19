@@ -9,6 +9,7 @@ Files:
   - Runs GEPA with a small train/val split
   - Prints pre/post optimization scores
   - Uses `loguru` for clear, step-by-step logging
+  - Prints a compact ASCII table of GEPA candidates (Pareto summary)
 
 Prerequisites:
 - DSPy installed: `pip install dspy`
@@ -44,9 +45,9 @@ Notes:
 - If you do not provide a `valset`, GEPA will use `trainset` for Pareto tracking (useful for inference-time search/overfitting to the batch).
 - `teacher` is currently not supported by GEPA in DSPy v3.
 - This example uses `loguru` for human-friendly logs. Pass `--log-level` (e.g., `DEBUG`, `INFO`) to control verbosity.
+- After optimization, a compact ASCII table summarizes the top candidates (idx, score, coverage, discovery calls).
 
 Next steps / extensions:
 - Swap the metric to a task-specific one (e.g., semantic similarity, schema validation, code execution success, etc.)
 - Use `track_stats=True` and inspect `optimized.detailed_results` (Pareto frontier scores, candidates, per-instance best outputs)
 - Try inference-time search by calling GEPA with `valset=trainset` and `track_best_outputs=True` (see docstring in `dspy.GEPA`)
-

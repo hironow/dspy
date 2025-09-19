@@ -189,6 +189,79 @@ def main():
             top_scores = sorted(dr.val_aggregate_scores, reverse=True)[:3]
             logger.debug("Top scores (top-3): {}", top_scores)
 
+            # Pretty print a compact Pareto summary table (no extra deps)
+            table = _format_gepa_results_table(dr, top_k=10)
+            if table:
+                logger.info("\n{}", table)
+                # Brief legend to help interpretation
+                logger.info(
+                    "\nNotes:\n"
+                    "- Score: aggregate validation score (higher is better).\n"
+                    "- Best@Val: number of validation items where this candidate is best (Pareto coverage).\n"
+                    "- DiscoveryCalls: cumulative metric calls when this candidate was discovered (earlier is smaller).\n"
+                    "- Best?: '*' marks the globally best candidate by aggregate score (returned program)."
+                )
+
+
+def _format_gepa_results_table(dr, top_k: int = 10) -> str:
+    """Create a compact ASCII table summarizing GEPA candidate results.
+
+    Columns:
+      - Idx: candidate index
+      - Score: aggregate validation score
+      - Best@Val: how many val tasks where this candidate is on the Pareto front (best for that task)
+      - DiscoveryCalls: cumulative metric calls when this candidate was discovered (if available)
+      - Best?: '*' marks global best by aggregate score
+    """
+    try:
+        n = len(dr.val_aggregate_scores)
+        if n == 0:
+            return ""
+
+        # Compute coverage per candidate using per_val_instance_best_candidates
+        coverage = [0] * n
+        for s in getattr(dr, "per_val_instance_best_candidates", []) or []:
+            for i in s:
+                if 0 <= i < n:
+                    coverage[i] += 1
+
+        rows = []
+        for i, score in enumerate(dr.val_aggregate_scores):
+            cov = coverage[i] if i < len(coverage) else 0
+            disc = "-"
+            try:
+                disc = getattr(dr, "discovery_eval_counts", [None] * n)[i]
+                if disc is None:
+                    disc = "-"
+            except Exception:
+                disc = "-"
+            is_best = "*" if i == dr.best_idx else ""
+            rows.append((i, score, cov, disc, is_best))
+
+        # Sort by Score desc, then coverage desc
+        rows.sort(key=lambda x: (x[1], x[2]), reverse=True)
+        rows = rows[: min(top_k, len(rows))]
+
+        headers = ("Idx", "Score", "Best@Val", "DiscoveryCalls", "Best?")
+
+        # Compute column widths
+        cols = list(zip(*([headers] + [(str(i), f"{s:.3f}", str(c), str(d), b) for i, s, c, d, b in rows])))
+        widths = [max(len(x) for x in col) for col in cols]
+
+        def fmt_row(cells):
+            return " | ".join(str(c).ljust(w) for c, w in zip(cells, widths, strict=False))
+
+        line = "-+-".join("-" * w for w in widths)
+
+        out = [fmt_row(headers), line]
+        for i, s, c, d, b in rows:
+            out.append(fmt_row((str(i), f"{s:.3f}", str(c), str(d), b)))
+
+        return "\n".join(out)
+    except Exception:
+        # Be conservative: if anything goes wrong, skip the table
+        return ""
+
 
 if __name__ == "__main__":
     main()
