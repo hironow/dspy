@@ -59,6 +59,12 @@
   - reflection_lm にはマルチモーダル対応モデル（例: gpt‑4o）、instruction_proposer には MultiModalInstructionProposer を使用
 - データ: `factory.image_caption_dummy(locale="ja")`（dspy.Image をURLで供給）
 
+### simple_gepa_multimodal_observe_compose.py
+- 概要: 観測→作文の二段構成（analyze: objects/attributes/actions/scene/meta → compose: caption/keywords）。
+- Metric: キーワード被覆＋簡潔さ。GEPA時は pred_name を活かし analyze/compose へ段ごとのFB。
+- GEPA: MultiModalInstructionProposer を使用（画像を構造化のまま反射LMへ）。
+- データ: `factory.image_caption_dummy(locale="ja")`
+
 ---
 
 ## Logs の見方（よく出るメッセージ）
