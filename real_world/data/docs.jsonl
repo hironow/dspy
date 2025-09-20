@@ -1,0 +1,5 @@
+{"id":"d1","text":"ENTRY XQ-11: KEY=PLIM, VALUE=ZARGLE. See archive shard A."}
+{"id":"d2","text":"ENTRY XQ-12: KEY=FRIPTOR, VALUE=VELUM. See archive shard B."}
+{"id":"d3","text":"ENTRY XQ-13 details — KEY=PLIM, VALUE=CRIMSON. Shard A only."}
+{"id":"d4","text":"ENTRY KA-77: KEY=RILUX, VALUE=OPAL. Non-PLIM field; shard C."}
+{"id":"d5","text":"ENTRY KA-78 has KEY=PLIM with VALUE=INDIGO. Shard B."}
