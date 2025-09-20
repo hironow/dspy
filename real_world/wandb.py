@@ -13,8 +13,8 @@ Behavior:
 from __future__ import annotations
 
 import os
-from typing import Any
 import time
+from typing import Any
 
 
 def get_wandb_args(
@@ -64,5 +64,6 @@ def make_run_name(prefix: str, *, ts_format: str = "%Y%m%d-%H%M%S", suffix: str 
     stamp = time.strftime(ts_format)
     base = f"{prefix}-{stamp}"
     return f"{base}-{suffix}" if suffix else base
+
 
 __all__.append("make_run_name")

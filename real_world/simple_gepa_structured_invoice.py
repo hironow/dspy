@@ -9,6 +9,12 @@ Structured invoice IE with task-specific metric using trace/pred_name/pred_trace
 
 Run (no external calls):
   uv run python real_world/simple_gepa_structured_invoice.py --dummy
+
+GEPA compile requirements:
+- metric(gold, pred, trace, pred_name, pred_trace)
+- exactly one of: auto | max_full_evals | max_metric_calls
+- reflection_lm or instruction_proposer
+- trainset (and recommended valset)
 """
 
 from __future__ import annotations

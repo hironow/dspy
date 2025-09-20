@@ -16,6 +16,12 @@ Usage:
 Notes:
 - The metric accepts (gold, pred, trace, pred_name, pred_trace) and returns
   either a float or dspy.Prediction(score=..., feedback=...).
+
+GEPA compile requirements:
+- metric(gold, pred, trace, pred_name, pred_trace)
+- exactly one of: auto | max_full_evals | max_metric_calls
+- reflection_lm or instruction_proposer
+- trainset (and recommended valset)
 """
 
 from __future__ import annotations

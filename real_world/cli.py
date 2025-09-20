@@ -15,9 +15,9 @@ Usage in a script:
 from __future__ import annotations
 
 import argparse
+import sys
 
 from loguru import logger
-import sys
 
 
 def add_standard_args(

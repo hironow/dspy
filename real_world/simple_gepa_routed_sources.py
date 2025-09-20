@@ -12,6 +12,12 @@ Run (no external calls):
 Switch policy at runtime:
   - Heavy (default here when optimizing): with dspy.context(rerank_policy="heavy")
   - Light (default otherwise): dspy.settings.configure(rerank_policy="light")
+
+GEPA compile requirements:
+- metric(gold, pred, trace, pred_name, pred_trace)
+- exactly one of: auto | max_full_evals | max_metric_calls
+- reflection_lm or instruction_proposer
+- trainset (and recommended valset)
 """
 
 from __future__ import annotations

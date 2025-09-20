@@ -8,6 +8,15 @@ Multimodal captioning (Observation -> Composition) with GEPA (v3+)
   - GEPAでは pred_name を用いて analyze / compose に別々の改善FBを返す
 - GEPA: MultiModalInstructionProposer により、画像を含む反射データから各段の指示文を最適化
 - ダミー/実LM両対応
+
+Usage:
+  uv run python real_world/simple_gepa_multimodal_observe_compose.py --dummy
+
+GEPA compile requirements:
+- metric(gold, pred, trace, pred_name, pred_trace)
+- exactly one of: auto | max_full_evals | max_metric_calls
+- reflection_lm or instruction_proposer (MultiModalInstructionProposer など)
+- trainset (and recommended valset)
 """
 
 from __future__ import annotations

@@ -5,6 +5,15 @@ Multimodal captioning with GEPA (v3+): image -> caption, keywords
 - Metric: coverage of gold.keywords in (pred.caption + pred.keywords) with brevity hint
 - GEPA: optimize caption instructions; use MultiModalInstructionProposer for reflection
 - Supports dummy (no external calls) and real LMs (OpenAI via helper)
+
+Usage:
+  uv run python real_world/simple_gepa_multimodal_caption.py --dummy
+
+GEPA compile requirements:
+- metric(gold, pred, trace, pred_name, pred_trace)
+- exactly one of: auto | max_full_evals | max_metric_calls
+- reflection_lm or instruction_proposer (e.g., MultiModalInstructionProposer)
+- trainset (and recommended valset)
 """
 
 from __future__ import annotations
