@@ -64,7 +64,7 @@ class SimpleQA(dspy.Module):
 
 
 def qa_metric_with_feedback(
-    gold: Example, pred: dspy.Prediction, trace=None, pred_name: str | None = None, pred_trace=None
+    gold: dspy.Example, pred: dspy.Prediction, trace=None, pred_name: str | None = None, pred_trace=None
 ):
     """
     GEPA-friendly metric: returns either a float or a dict-like Prediction with `score` and `feedback`.

@@ -118,7 +118,7 @@ class RoutedSources(dspy.Module):
 
 
 def routed_metric_with_feedback(
-    gold: Example,
+    gold: dspy.Example,
     pred: dspy.Prediction,
     trace=None,
     pred_name: str | None = None,

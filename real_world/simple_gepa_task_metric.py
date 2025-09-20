@@ -71,7 +71,7 @@ def _normalize_color(s: str) -> str:
 
 
 def qa_metric_task_specific(
-    gold: Example, pred: dspy.Prediction, trace=None, pred_name: str | None = None, pred_trace=None
+    gold: dspy.Example, pred: dspy.Prediction, trace=None, pred_name: str | None = None, pred_trace=None
 ):
     """
     Task-specific metric:
