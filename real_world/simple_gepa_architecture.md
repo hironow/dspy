@@ -4,6 +4,73 @@
 
 ---
 
+## 7) GEPA 全体フロー（アスキーアート）
+
+```
+必要要素（Inputs）
+  - Student Program (DSPy Module with Predictors)
+  - Metric (GEPA用: gold, pred, trace, pred_name, pred_trace -> score | {score, feedback})
+  - Reflection: reflection_lm または instruction_proposer（どちらか必須）
+  - Budget: auto("light|medium|heavy") | max_metric_calls | max_full_evals（いずれか必須）
+  - Optional: component_selector（"round_robin" | "all" | 関数）, use_merge, logging, track_stats
+
+初期化
+  [Student instructions]
+        |
+        v
+  [Seed Candidate (component_name -> instruction)]
+        |
+        v
+  (Option) Baseline Eval on valset  -->  baseline score
+
+反復（Iterate until budget）
+  ┌───────────────────────────────────────────────────────────────────────┐
+  │ 1) Candidate Selection (Pareto Frontier)                              │
+  │    - 現在の Pareto 前線から確率的に 1 候補を選ぶ                            │
+  │                                                                       │
+  │ 2) Component Selection                                                │
+  │    - component_selector に従い、最適化対象 Predictor を選ぶ                │
+  │                                                                       │
+  │ 3) Minibatch Sampling (trainset から M 件)                             │
+  │                                                                       │
+  │ 4) Rollout + Trace Capture                                            │
+  │    - 候補プログラムをミニバッチで実行し、各 Predictor のトレース取得            │
+  │    - Metric を呼び、score + textual feedback を取得（pred_name付き）      │
+  │    - 失敗（パース）は FailedPrediction として保持（構文指示に活用）           │
+  │                                                                       │
+  │ 5) Reflect & Propose (指示文の改良案)                                    │
+  │    - reflective_dataset: {Inputs, Generated Outputs, Feedback, ...}   │
+  │    - reflection_lm または instruction_proposer で new instruction       │
+  │                                                                       │
+  │ 6) Build New Candidate                                                │
+  │    - 対象 Predictor の instructions を置き換えて新候補を生成                │
+  │                                                                       │
+  │ 7) Evaluate & Pareto Update                                           │
+  │    - ミニバッチでベースライン比の改善を確認                                  │
+  │    - 周期的/条件付きに valset で評価し、Pareto 前線を更新                    │
+  │    - discovery_eval_counts などの統計を記録                              │
+  │                                                                       │
+  │ 8) (Optional) Merge/Crossover                                         │
+  │    - 系統の異なる候補をマージし、新しい強い候補を探索.                         │
+  └───────────────────────────────────────────────────────────────────────┘
+
+終了（Budget 消費 or 収束）
+  - valset 集計スコアが最大の候補（best candidate）を返す
+  - track_stats=True なら詳細（候補群、Pareto、最良出力、メトリクス呼数 等）を格納
+
+補助（Adapter の役割）
+  - DspyAdapter が評価/トレース取得/反射用データ整形/提案器呼び出しを一手に担う
+  - add_format_failure_as_feedback=True でパース失敗も学習材料へ（構造指示を自動付与）
+
+Budget の目安（auto の例）
+  - auto("light|medium|heavy") から候補数 n を決め、`auto_budget()` でおおよその metric_calls を見積
+  - 代替: `max_metric_calls` を直接指定、または `max_full_evals * (|train|+|val|)`
+
+出力（Outputs）
+  - Optimized Program（最良 instructions を持つ DSPy Module）
+  - Optional: Detailed Results（Pareto 前線・候補集・最良出力・ログディレクトリ 等）
+```
+
 ## 1) simple_gepa_basic.py（SimpleQA: rewrite → predict）
 
 ```
@@ -200,6 +267,7 @@ GEPA後: analyze/compose の instructions が段別に洗練（観測語彙→�
   - 反射: MultiModalInstructionProposer を使用（画像を構造化のまま反射LMへ）
 
 備考:
+
 - 本例は dspy.Signature（Analyze/Compose）を導入し、I/O の型・役割を明示。
 - GEPA が最適化するのは instructions。Signature の doc/desc は最適化対象外だが、
   Adapter の構造化プロンプトや失敗時の構造指示に参照され、安定性に寄与。
@@ -217,4 +285,92 @@ GEPA:
   - 同じ metric をよりリッチに（score + feedback）呼び、失敗例のテキストFBを反射に活用  
   - pred_name/pred_trace により、どの Predictor をどう改善するかを具体化（instructions を進化）
   - 予算（auto / max_metric_calls）内で、反射→候補生成→評価→Pareto 追跡→最良候補を返す
+```
+## 8) GEPA フローチャート（ボックス図）
+
+```
+                +-----------------------+        +---------------------+
+                |  Student Program      |        |   Metric            |
+                |  (DSPy Module)        |        | (score & feedback)  |
+                +-----------+-----------+        +----------+----------+
+                            \                         /
+                             \                       /
+                              v                     v
+                        +-----+-----------------------+-----+
+                        |     Initialize Seed Candidate     |
+                        |  (component -> instruction map)   |
+                        +-------------------+---------------+
+                                            |
+                                            v
+                                 +----------+-----------+
+                                 |   Budget Controller  |
+                                 |  (auto / max_* )     |
+                                 +----------+-----------+
+                                            |
+                                  (metric calls remain?)
+                                     yes / no
+                                      |     \
+                                      |      \---> no ---> +----------------------+
+                                      |                    |  Return Best on Val  |
+                                      |                    |  (Pareto aggregate)  |
+                                      |                    +----------+-----------+
+                                      |                               ^
+                                      v                               |
+                    +-----------------+-----------------+             |
+                    |   Select Candidate from Pareto    |             |
+                    +-----------------+-----------------+             |
+                                      |
+                                      v
+                    +-----------------+-----------------+
+                    |   Select Components to Mutate     |
+                    |  (component_selector: rr / all)   |
+                    +-----------------+-----------------+
+                                      |
+                                      v
+                    +-----------------+-----------------+
+                    |   Sample Minibatch from Train     |
+                    +-----------------+-----------------+
+                                      |
+                                      v
+                    +-----------------+-----------------+
+                    |  Rollout Candidate on Minibatch   |
+                    |  Capture Traces (per predictor)   |
+                    +-----------------+-----------------+
+                                      |
+                                      v
+                    +-----------------+-----------------+
+                    | Evaluate with Metric               |
+                    | - program score                    |
+                    | - textual feedback (pred_name)     |
+                    | - (format failures kept if enabled)|
+                    +-----------------+-----------------+
+                                      |
+                                      v
+                    +-----------------+-----------------+
+                    | Reflect & Propose Instructions    |
+                    | (reflection_lm / proposer)        |
+                    +-----------------+-----------------+
+                                      |
+                                      v
+                    +-----------------+-----------------+
+                    |   Build New Candidate             |
+                    +-----------------+-----------------+
+                                      |
+                                      v
+                    +-----------------+-----------------+
+                    |  Evaluate (mini/full) & Update    |
+                    |  Pareto Frontier on Val           |
+                    +-----------------+-----------------+
+                                      |
+                                      v
+                    +-----------------+-----------------+
+                    |  (Optional) Merge/Crossover       |
+                    +-----------------+-----------------+
+                                      |
+                                      +---------------------------> loop
+Legend / Notes:
+- component_selector: round_robin（既定）/ all / 関数
+- add_format_failure_as_feedback: True でパース失敗も反射データへ
+- track_stats / track_best_outputs: 最適化の詳細やバッチ最良出力を保持
+- Pareto: 各 val 例で最良の候補集合（多様な戦略を維持）
 ```
