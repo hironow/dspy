@@ -1,55 +1,143 @@
 # Real-World GEPA Examples (v3+)
 
-This folder contains a minimal, practical example showing how to use `dspy.GEPA` in DSPy v3+. It is designed to be simple and easy to extend.
+このフォルダは、DSPy v3+ における `dspy.GEPA` の最小・実用サンプル集です。スクリプトは「ダミーLMでのローカル検証」と「本物のLMでの実行」の両方に対応し、表示・コスト見積・保存などは共通ユーティリティに切り出しています。
 
-Files:
-- `real_world/simple_gepa_basic.py` — a single-file, minimal GEPA workflow:
-  - Defines a tiny DSPy program (Predict-based QA)
-  - Implements a GEPA-friendly metric with feedback
-  - Runs GEPA with a small train/val split
-  - Prints pre/post optimization scores
-  - Uses `loguru` for clear, step-by-step logging
-  - Prints a compact ASCII table of GEPA candidates (Pareto summary)
-  - Dataset (質問/回答)とプロンプトの説明は日本語（数学問題は避けています）
+## Quick Start
 
-Prerequisites:
-- DSPy installed: `pip install dspy`
-- GEPA core library: `pip install gepa`
-- A language model configured for DSPy (either a real LM or `DummyLM` for local dry runs)
+- 依存:
+  - `uv add dspy gepa`
+  - OpenAI/Anthropic を使う場合は環境変数 `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`
 
-How to run:
-1) Option A — dry run with `DummyLM` (no external calls):
-   - Run: `python real_world/simple_gepa_basic.py --dummy`
-   - With detailed logs: `python real_world/simple_gepa_basic.py --dummy --log-level DEBUG`
+- ダミーLMで実行（外部通信なし）:
+  - `uv run python real_world/simple_gepa_basic.py --dummy`
+  - `--log-level DEBUG` で詳細ログ
 
-2) Option B — real LM (replace with your provider/model):
-   - Edit `simple_gepa_basic.py` near “LM configuration” and set something like:
-     ```python
-     task_lm = dspy.LM(model="gpt-4o-mini", temperature=0.0)
-     reflection_lm = dspy.LM(model="gpt-4o", temperature=0.7)
-     dspy.settings.configure(lm=task_lm)
-     ```
-   - Run: `python real_world/simple_gepa_basic.py`
+- 本物のLMで実行（OpenAI例・helper経由）:
+  - `uv run python real_world/simple_gepa_basic.py`
+  - ほかの `simple_*.py` も同様（--dummy を付けなければ helper が OpenAI LM を初期化）
 
-Key GEPA compile arguments (required/important):
-- `metric`: A function with 5 parameters `(gold, pred, trace, pred_name, pred_trace)` returning either a float score or `{"score": float, "feedback": str}`. Text feedback greatly improves sample efficiency.
-- Exactly one of: `auto` | `max_metric_calls` | `max_full_evals`
-  - Example: `auto="light"` or `max_metric_calls=1200`
-- `reflection_lm` OR `instruction_proposer`
-  - GEPA uses `reflection_lm` to analyze traces/feedback and propose improved instructions. Alternatively, provide a custom `instruction_proposer`.
-- `trainset`: Non-empty list of `dspy.Example`
-- `valset` (recommended): Small, representative set for Pareto tracking and selection
-- Optional: `track_stats=True` to attach `optimized.detailed_results` for analysis
+共通の「事前/事後表示」「コスト見積」「保存」は、`real_world/utils.py`・`real_world/cost.py`・`real_world/save.py` にまとめています。
 
-Notes:
-- GEPA expects predictor-level names/traces to be available. The adapter in DSPy takes care of this.
-- If you do not provide a `valset`, GEPA will use `trainset` for Pareto tracking (useful for inference-time search/overfitting to the batch).
-- `teacher` is currently not supported by GEPA in DSPy v3.
-- This example uses `loguru` for human-friendly logs. Pass `--log-level` (e.g., `DEBUG`, `INFO`) to control verbosity.
-- After optimization, a compact ASCII table summarizes the top candidates (idx, score, coverage, discovery calls).
- - 本例の対象物（データセットの質問/回答、プロンプトの説明）は日本語です。英語に戻したい場合は `build_tiny_dataset()` と `with_instructions(...)` を編集してください。
+---
 
-Next steps / extensions:
-- Swap the metric to a task-specific one (e.g., semantic similarity, schema validation, code execution success, etc.)
-- Use `track_stats=True` and inspect `optimized.detailed_results` (Pareto frontier scores, candidates, per-instance best outputs)
-- Try inference-time search by calling GEPA with `valset=trainset` and `track_best_outputs=True` (see docstring in `dspy.GEPA`)
+## Scripts（最小GEPAパイプライン）
+
+### simple_gepa_basic.py
+
+- 概要: 2段のPredict（rewrite→predict）で日本語QAを解く最小例。
+- Metric: 正解/不正解 + 短いテキストFB（GEPA時）
+- データ: `factory.basic_qa_dummy(locale="ja")`
+- 実LM: `helper` の `openai_gpt_4o_mini_lm`（タスク）/`openai_gpt_4o_lm`（反射）
+- 表示/保存/見積: `utils.summarize_*` / `save.save_artifacts` / `cost.log_*`
+
+### simple_gepa_task_metric.py
+
+- 概要: 上記に「タスク特化メトリクス（同義語・近似一致・簡潔さ）」を導入。
+- Metric: `score = 0.8*Correctness + 0.2*Brevity`、GEPA時は要素別FBを返す
+- データ: `factory.task_metric_qa_dummy(locale="ja")`
+
+### simple_gepa_structured_invoice.py
+
+- 概要: 請求書テキスト→構造化抽出（extract→normalize）。
+- Metric: スキーマ検証（vendor/date/amount/currency）。GEPA時は `pred_name/pred_trace` を使い、normalize 向けには from→to 提示（例: `31-12-2024 → 2024-12-31`, `¥ → JPY`）。
+- データ: `factory.invoice_dummy(locale="ja")`
+
+### simple_gepa_routed_sources.py
+
+- 概要: Router × 3ソース（DB/RAG/Graph）× 条件付きリランク。
+  - light policy（本番想定）: ルータで選んだ1ソースだけを呼ぶ
+  - heavy policy（最適化/検証）: 全ソース取得＋リランク
+- Metric: 最終テキストの包含一致 + pred_name別FB（route/rerank/source）
+- データ: `factory.routed_sources_dummy(locale="ja")`
+
+---
+
+## Logs の見方（よく出るメッセージ）
+
+- Baseline:
+  - `Running baseline evaluation on N validation examples...`
+  - `PREDICTIVE-NOTE: 推定タスクLM呼び出し回数 (baseline) ≈ ...`（`cost.log_baseline_estimate` 由来）
+
+- GEPA 事前見積:
+  - `metric_calls ≈ ...` / `taskLM_calls ≈ ...`（`cost.log_gepa_estimate` 由来）
+  - `adapter.evaluate(...)` / `propose_new_texts(...)` の呼び出し箇所メモ
+
+- GEPA 実行/事後:
+  - `GEPA compile finished.`
+  - `Post-GEPA score: ...`
+  - 候補の簡易表（Idx/Score/Best@Val/DiscoveryCalls/Best?）と BEFORE/AFTER 表（`utils.summarize_*`）
+  - 事後実測ログ（`cost.log_recorded_gepa_cost` 由来）
+
+---
+
+## 保存（Artifacts）
+
+- `save.save_artifacts()` により `real_world/exports/` に保存
+  - baseline: `<prefix>-baseline-YYYYmmdd-HHMMSS.json`
+  - optimized: `<prefix>-optimized-YYYYmmdd-HHMMSS.json`
+  - detailed_results: `<prefix>-gepa-details-YYYYmmdd-HHMMSS.json`（可能な場合）
+
+---
+
+## Shared Helpers（共通モジュール）
+
+- helper.py
+  - 本物のLMを簡単に取得する小さなヘルパ（OpenAI/Anthropic）。
+  - 例: `from real_world.helper import openai_gpt_4o_mini_lm` / `configure_openai(...)`。
+
+- dummy_lm.py
+  - ダミーLM（DummyLM）の作成/設定を一本化。JSONAdapter を隠蔽し、安定パースを保証。
+  - `make_dummy_lm_json(...)` / `configure_dummy_adapter(...)`。
+
+- factory.py
+  - ダミー/実データのファクトリ。全て `(trainset, valset)` を返す。
+  - QA/invoice/routed の各種。`locale="ja"` のサポートあり。
+
+- utils.py
+  - `summarize_gepa_results(optimized, logger)`：GEPA候補の簡易表
+  - `summarize_before_after(before_instructions, optimized, logger)`：指示文の BEFORE/AFTER 表
+
+- cost.py
+  - `log_baseline_estimate(...)`：ベースラインの推定呼数
+  - `log_gepa_estimate(...)`：GEPAの予算見積（metric_calls / taskLM_calls）
+  - `log_recorded_gepa_cost(...)`：最適化ログからの実測値
+
+- save.py
+  - `save_artifacts(program, optimized, save_dir, prefix, logger)`：baseline/optimized/detailed_results を保存
+
+- simple_gepa_architecture.md
+  - 各サンプルの最適化後アーキテクチャ（アスキー図）と Evaluate/GEPA の役割説明
+
+---
+
+## 使い分け（Dummy vs Real LMs）
+
+- `--dummy` を付けると DummyLM を使い、外部コールは一切不要。
+- 付けない場合は `helper` が OpenAI（既定）を初期化。
+- `routed_sources` のみ policy を切替：
+  - Baseline/Post は `rerank_policy="light"`
+  - GEPA中は `rerank_policy="heavy"`
+
+---
+
+## GEPA のメトリクス（共通ルール）
+
+- Evaluate: `metric(example, pred) -> float`
+- GEPA: `metric(gold, pred, trace, pred_name, pred_trace) -> float | dspy.Prediction(score, feedback)`
+  - Predictor単位のFB（pred_name/pred_trace）で「どこをどう直すか」を具体化
+
+---
+
+## 出力と保存
+
+- ログにベースライン/最適化後のスコア、GEPA候補の簡易表、指示文の BEFORE/AFTER。
+- `real_world/exports/` に baseline/optimized と GEPA 詳細（可能なら）を保存。
+
+---
+
+## よくある拡張
+
+- metric の差し替え（構文検証、LLM-as-judge、ドメイン固有ルール）
+- 実データの投入（`factory.*_from_records/csv/jsonl`）
+- 反射モデルの強化（`openai_gpt_4o_lm`/Anthropicへ切替）
+- Router/reranker の軽量化や policy 設計（本番は light、最適化は heavy）
