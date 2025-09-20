@@ -34,6 +34,8 @@ import dspy
 from real_world.helper import openai_gpt_4o_mini_lm, openai_gpt_4o_lm
 from real_world.factory import basic_qa_dummy
 from real_world.dummy_lm import make_dummy_lm_json, configure_dummy_adapter
+from real_world.utils import summarize_gepa_results, summarize_before_after
+from real_world.cost import log_baseline_estimate, log_gepa_estimate, log_recorded_gepa_cost
 
 
 class SimpleQA(dspy.Module):
@@ -180,18 +182,8 @@ def main():
 
     evaluator = Evaluate(devset=valset, metric=qa_metric_with_feedback, display_progress=False, num_threads=1)
     logger.info("Running baseline evaluation on {} validation examples...", len(valset))
-    # Predictive notes for real API mode
     preds = len(program.predictors())
-    baseline_calls = len(valset) * preds
-    logger.info(
-        "PREDICTIVE-NOTE [CALLSITE]: 実APIではここで 'Evaluate(program)' が各例を評価し、その過程で 'program(**example.inputs())' により各 Predictor ぶんタスクLM への推論が発生します。"
-    )
-    logger.info(
-        "PREDICTIVE-NOTE: 推定タスクLM呼び出し回数 (baseline) ≈ バリデーション件数 × Predictor数 = {} × {} = {}",
-        len(valset),
-        preds,
-        baseline_calls,
-    )
+    log_baseline_estimate(valset_size=len(valset), num_predictors=preds, logger=logger)
     baseline = evaluator(program)
     logger.success("Baseline score: {}", baseline.score)
 
@@ -221,129 +213,12 @@ def main():
             track_stats=True,
         )
 
-    # Predictive notes for GEPA in real API mode
-    # Determine num_candidates from GEPA auto mode when possible
-    auto_mode = getattr(gepa, "auto", None)
-    auto_map = {"light": 6, "medium": 12, "heavy": 18}
-    n_candidates = auto_map.get(auto_mode, None)
-
-    # Approximate metric-call budget
-    approx_budget = None
-    approx_budget_min = None
-    approx_budget_max = None
-    if auto_mode is not None and n_candidates is not None:
-        try:
-            # Mid (library default assumptions)
-            approx_budget = gepa.auto_budget(
-                num_preds=preds,
-                num_candidates=n_candidates,
-                valset_size=len(valset),
-            )
-
-            # Compute a plausible range by varying minibatch size (M) and full_eval_steps (m)
-            # Lower bound: smaller M + larger m (fewer periodic full evals)
-            min_M = getattr(gepa, "reflection_minibatch_size", 3) or 3
-            min_M = max(1, int(min_M))
-            m_hi = 10  # fewer periodic full evals vs default (5)
-
-            budget_min_via_M = gepa.auto_budget(
-                num_preds=preds,
-                num_candidates=n_candidates,
-                valset_size=len(valset),
-                minibatch_size=min_M,
-            )
-            budget_min_via_Mm = gepa.auto_budget(
-                num_preds=preds,
-                num_candidates=n_candidates,
-                valset_size=len(valset),
-                minibatch_size=min_M,
-                full_eval_steps=m_hi,
-            )
-
-            # Upper bound: larger M (close to valset) + smaller m (more frequent full evals)
-            max_M = max(35, len(valset))
-            m_lo = 1
-            budget_max_via_M = gepa.auto_budget(
-                num_preds=preds,
-                num_candidates=n_candidates,
-                valset_size=len(valset),
-                minibatch_size=max_M,
-            )
-            budget_max_via_Mm = gepa.auto_budget(
-                num_preds=preds,
-                num_candidates=n_candidates,
-                valset_size=len(valset),
-                minibatch_size=max_M,
-                full_eval_steps=m_lo,
-            )
-
-            approx_budget_min = min(budget_min_via_M, budget_min_via_Mm)
-            approx_budget_max = max(budget_max_via_M, budget_max_via_Mm)
-        except Exception:
-            approx_budget = None
-    elif getattr(gepa, "max_full_evals", None) is not None:
-        approx_budget = gepa.max_full_evals * (len(trainset) + len(valset))
-    elif getattr(gepa, "max_metric_calls", None) is not None:
-        approx_budget = gepa.max_metric_calls
-        approx_budget_min = approx_budget
-        approx_budget_max = approx_budget
-
-    # Rough estimate of trials N (mirrors internal logic approximately)
-    N = None
-    if n_candidates is not None:
-        try:
-            N = int(max(2 * (preds * 2) * math.log2(n_candidates), 1.5 * n_candidates))
-        except Exception:
-            N = None
-
-    if approx_budget is not None:
-        if approx_budget_min is not None and approx_budget_max is not None:
-            logger.info(
-                "PREDICTIVE-NOTE RANGE: metric_calls ≈ {} .. {}（mid ≈ {}、auto='{}'）",
-                approx_budget_min,
-                approx_budget_max,
-                approx_budget,
-                auto_mode if auto_mode is not None else "manual",
-            )
-        else:
-            logger.info(
-                "PREDICTIVE-NOTE: 実APIではGEPA最適化中に評価関数 (metric) の呼び出しが概ね ~{} 回（auto='{}'想定）発生します。",
-                approx_budget,
-                auto_mode if auto_mode is not None else "manual",
-            )
-
-    # Approximate LM call counts (task vs reflection)
-    if approx_budget is not None:
-        approx_task_lm_calls = approx_budget * preds
-        if approx_budget_min is not None and approx_budget_max is not None:
-            logger.info(
-                "PREDICTIVE-NOTE RANGE: taskLM_calls ≈ ({}..{}) × {} ≈ {}..{}",
-                approx_budget_min,
-                approx_budget_max,
-                preds,
-                approx_budget_min * preds,
-                approx_budget_max * preds,
-            )
-        logger.info(
-            "PREDICTIVE-NOTE: タスクLMの推定呼び出し回数（mid） ≈ metric_calls × Predictor数 = {} × {} ≈ {}",
-            approx_budget,
-            preds,
-            approx_task_lm_calls,
-        )
-
-    logger.info(
-        "PREDICTIVE-NOTE [CALLSITE]: 実APIではGEPA内部で 'adapter.evaluate(...)' がプログラムを評価（タスクLMを呼び出し）、'propose_new_texts(...)' が反射LM(または提案器)を呼び出します。"
-    )
-    if N is not None:
-        logger.info(
-            "PREDICTIVE-NOTE: 反射LMの呼び出しは試行回数Nに概ね比例（N≈{}）。各試行で対象Predictor向けの改良命令を1回程度生成する想定です。",
-            N,
-        )
-    logger.info(
-        "PREDICTIVE-NOTE: reflection_minibatch_size={}, num_candidates(auto)={}, predictor_count={}",
-        getattr(gepa, "reflection_minibatch_size", None),
-        n_candidates,
-        preds,
+    log_gepa_estimate(
+        gepa=gepa,
+        num_predictors=preds,
+        valset_size=len(valset),
+        trainset_size=len(trainset),
+        logger=logger,
     )
 
     logger.info("Starting GEPA compile with train={} and val={}...", len(trainset), len(valset))
@@ -368,6 +243,8 @@ def main():
     summarize_before_after(before_instructions, optimized, logger)
 
     logger.info("FYI: この例ではGEPAは各Predictorの命令文（instructions）を主に最適化します。重み学習は行いません。")
+    if hasattr(optimized, "detailed_results") and optimized.detailed_results is not None:
+        log_recorded_gepa_cost(optimized.detailed_results, num_predictors=preds, logger=logger)
 
     # Save programs in DSPy standard format (.json state)
     try:

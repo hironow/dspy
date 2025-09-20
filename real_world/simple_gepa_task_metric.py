@@ -32,6 +32,7 @@ from real_world.helper import openai_gpt_4o_mini_lm, openai_gpt_4o_lm
 from real_world.factory import task_metric_qa_dummy
 from real_world.dummy_lm import make_dummy_lm_json, configure_dummy_adapter
 from real_world.utils import summarize_gepa_results, summarize_before_after
+from real_world.cost import log_baseline_estimate, log_gepa_estimate, log_recorded_gepa_cost
 
 
 class SimpleQA(dspy.Module):
@@ -220,6 +221,7 @@ def main():
 
     evaluator = Evaluate(devset=valset, metric=qa_metric_task_specific, display_progress=False, num_threads=1)
     logger.info("Evaluating baseline on {} validation examples...", len(valset))
+    log_baseline_estimate(valset_size=len(valset), num_predictors=len(program.predictors()), logger=logger)
     baseline = evaluator(program)
     logger.success("Baseline score: {}", baseline.score)
 
@@ -233,6 +235,13 @@ def main():
     )
 
     logger.info("Running GEPA compile (max_metric_calls={})...", gepa.max_metric_calls)
+    log_gepa_estimate(
+        gepa=gepa,
+        num_predictors=len(program.predictors()),
+        valset_size=len(valset),
+        trainset_size=len(trainset),
+        logger=logger,
+    )
     optimized = gepa.compile(program, trainset=trainset, valset=valset)
     logger.success("GEPA compile finished.")
 
@@ -243,6 +252,8 @@ def main():
 
     summarize_gepa_results(optimized, logger, top_k=10)
     summarize_before_after(before_instructions, optimized, logger)
+    if hasattr(optimized, "detailed_results") and optimized.detailed_results is not None:
+        log_recorded_gepa_cost(optimized.detailed_results, num_predictors=len(program.predictors()), logger=logger)
 
     # Save programs
     try:
