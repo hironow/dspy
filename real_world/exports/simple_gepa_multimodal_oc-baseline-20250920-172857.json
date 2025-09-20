@@ -1,0 +1,83 @@
+{
+  "analyze": {
+    "traces": [],
+    "train": [],
+    "demos": [],
+    "signature": {
+      "instructions": "画像から主要な観測語彙を抽出してください。順序は 主体→属性（色・形）→行為→背景。meta にはEXIF等の補足があれば短語で。",
+      "fields": [
+        {
+          "prefix": "Image:",
+          "description": "Input image (structured)"
+        },
+        {
+          "prefix": "Objects:",
+          "description": "Main objects (1–4 short nouns)"
+        },
+        {
+          "prefix": "Attributes:",
+          "description": "Colors/shapes (1–4)"
+        },
+        {
+          "prefix": "Actions:",
+          "description": "Key actions/states (0–3)"
+        },
+        {
+          "prefix": "Scene:",
+          "description": "One short phrase, e.g., '屋外'"
+        },
+        {
+          "prefix": "Meta:",
+          "description": "Optional hints, short tokens"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "compose": {
+    "traces": [],
+    "train": [],
+    "demos": [],
+    "signature": {
+      "instructions": "与えられた観測（objects/attributes/actions/scene/meta）を自然に統合し、1〜2文の簡潔な説明と keywords を出力してください。",
+      "fields": [
+        {
+          "prefix": "Objects:",
+          "description": "From Analyze.objects"
+        },
+        {
+          "prefix": "Attributes:",
+          "description": "From Analyze.attributes"
+        },
+        {
+          "prefix": "Actions:",
+          "description": "From Analyze.actions"
+        },
+        {
+          "prefix": "Scene:",
+          "description": "From Analyze.scene"
+        },
+        {
+          "prefix": "Meta:",
+          "description": "From Analyze.meta"
+        },
+        {
+          "prefix": "Caption:",
+          "description": "1–2 sentences. Subject→attributes→action→background."
+        },
+        {
+          "prefix": "Keywords:",
+          "description": "Short nouns (<=5)"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "metadata": {
+    "dependency_versions": {
+      "python": "3.12",
+      "dspy": "3.0.3",
+      "cloudpickle": "3.1"
+    }
+  }
+}

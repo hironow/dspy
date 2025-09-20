@@ -22,6 +22,7 @@ from loguru import logger
 import dspy
 from dspy.adapters.types import Image as DspyImage
 from dspy.teleprompt.gepa.instruction_proposal import MultiModalInstructionProposer
+from dspy.teleprompt.bootstrap_trace import FailedPrediction
 
 from real_world.helper import openai_gpt_4o_mini_lm, openai_gpt_4o_lm
 from real_world.factory import image_caption_dummy
@@ -31,18 +32,56 @@ from real_world.cost import log_baseline_estimate, log_gepa_estimate, log_record
 from real_world.wandb import get_wandb_args
 from real_world.save import save_artifacts
 
+# Signatures: using typed fields improves clarity and parsing stability
+#
+# NOTE: このファイルは、当リポジトリのシンプルなマルチモーダル例で
+#       初めて dspy.Signature を導入しているサンプルです。
+#   - GEPA が直接最適化するのは signature.instructions（指示文）です。
+#   - ここでのクラス docstring / 各フィールドの desc は最適化の「対象」ではありませんが、
+#     Adapter が構造化プロンプトを組み立てる際に参照され、
+#     推論の出力安定性や、構文失敗時の「この構造に従ってください」の指示に間接的に効きます。
+#   - そのため「変化させたい方針」は instructions にも明記し、
+#     desc には構造・型・件数目安などを簡潔に記述する方針にしています。
+#
+# 以上を踏まえて、analyze/compose の I/O を Signature として定義します。
+class Analyze(dspy.Signature):
+    """Extract concise observations from the image.
+
+    Output short, discriminative tokens:
+    - objects: main nouns (1–4)
+    - attributes: colors/shapes (1–4)
+    - actions: key actions/states (0–3)
+    - scene: a short phrase (e.g., "屋外")
+    - meta: optional hints (e.g., "建物")
+    """
+
+    image: dspy.Image = dspy.InputField(desc="Input image (structured)")
+    objects: list[str] = dspy.OutputField(desc="Main objects (1–4 short nouns)")
+    attributes: list[str] = dspy.OutputField(desc="Colors/shapes (1–4)")
+    actions: list[str] = dspy.OutputField(desc="Key actions/states (0–3)")
+    scene: str = dspy.OutputField(desc="One short phrase, e.g., '屋外'")
+    meta: list[str] = dspy.OutputField(desc="Optional hints, short tokens")
+
+
+class Compose(dspy.Signature):
+    """Compose a concise 1–2 sentence caption using observations."""
+
+    objects: list[str] = dspy.InputField(desc="From Analyze.objects")
+    attributes: list[str] = dspy.InputField(desc="From Analyze.attributes")
+    actions: list[str] = dspy.InputField(desc="From Analyze.actions")
+    scene: str = dspy.InputField(desc="From Analyze.scene")
+    meta: list[str] = dspy.InputField(desc="From Analyze.meta")
+    caption: str = dspy.OutputField(desc="1–2 sentences. Subject→attributes→action→background.")
+    keywords: list[str] = dspy.OutputField(desc="Short nouns (<=5)")
+
 
 class ObsComposeCaptioner(dspy.Module):
     def __init__(self):
         super().__init__()
         # 1) 観測ステージ（objects/attributes/actions/scene/meta）
-        self.analyze = dspy.Predict(
-            "image: dspy.Image -> objects: list[str], attributes: list[str], actions: list[str], scene: str, meta: list[str]"
-        )
+        self.analyze = dspy.Predict(Analyze)
         # 2) 作文ステージ（caption/keywords）
-        self.compose = dspy.Predict(
-            "objects: list[str], attributes: list[str], actions: list[str], scene: str, meta: list[str] -> caption: str, keywords: list[str]"
-        )
+        self.compose = dspy.Predict(Compose)
 
     def forward(self, image: DspyImage):
         # Optional per-stage LMs
@@ -103,6 +142,59 @@ def caption_metric(
 
     missing = [k for k in gold_k if (k not in pred_k and k not in caption_lower)]
     fb_parts: list[str] = []
+
+    # Trace-based consistency check between analyze -> compose
+    # - Extract last analyze outputs from the full trace
+    analyze_obs_tokens: set[str] = set()
+    try:
+        if isinstance(trace, list):
+            for _pred, _inputs, _outputs in reversed(trace):
+                # Skip failed parses from analyze
+                if isinstance(_outputs, FailedPrediction):
+                    continue
+                # Identify analyze by its output fields (objects/attributes/actions/scene/meta)
+                try:
+                    out_items = dict(_outputs.items()) if hasattr(_outputs, "items") else {}
+                except Exception:
+                    out_items = {}
+                if {
+                    "objects",
+                    "attributes",
+                    "actions",
+                    "scene",
+                    "meta",
+                }.issubset(set(out_items.keys())):
+                    obs_objects = _normalize_words(list(out_items.get("objects", []) or []))
+                    obs_attributes = _normalize_words(list(out_items.get("attributes", []) or []))
+                    obs_actions = _normalize_words(list(out_items.get("actions", []) or []))
+                    obs_scene = {str(out_items.get("scene", "")).strip().lower()} if out_items.get("scene", "") else set()
+                    obs_meta = _normalize_words(list(out_items.get("meta", []) or []))
+                    analyze_obs_tokens = (
+                        obs_objects | obs_attributes | obs_actions | obs_scene | obs_meta
+                    )
+                    break
+    except Exception:
+        pass
+
+    # Reflect missing-from-composition observations and possibly spurious keywords
+    if analyze_obs_tokens:
+        not_reflected = [
+            tok for tok in sorted(analyze_obs_tokens)
+            if (tok not in caption_lower and tok not in pred_k)
+        ]
+        if not_reflected:
+            fb_parts.append(f"観測未反映: {not_reflected}")
+
+        spurious = [tok for tok in sorted(pred_k) if tok not in analyze_obs_tokens]
+        if spurious:
+            fb_parts.append(f"観測にない語（要注意）: {spurious}")
+
+    # If the target predictor's trace indicates a formatting failure, surface a schema hint
+    try:
+        if isinstance(pred_trace, list) and any(isinstance(t[2], FailedPrediction) for t in pred_trace):
+            fb_parts.append("出力の構文/形式に従ってください（指定フィールドのみ、型・構造を厳守）。")
+    except Exception:
+        pass
 
     if pred_name == "analyze":
         if missing:
@@ -237,6 +329,8 @@ def main():
         reflection_lm=reflection_lm,
         instruction_proposer=proposer,
         reflection_minibatch_size=1,
+        # 解析失敗（パースエラー）を反射データに含め、スキーマ遵守を学習材料にする
+        add_format_failure_as_feedback=True,
         track_stats=True,
         **get_wandb_args(
             project="real_world",
@@ -244,6 +338,16 @@ def main():
             enabled=not args.dummy,
         ),
     )
+
+    # NOTE: component_selector の選択について
+    # - 既定（round_robin）は段ごとの改善が観察しやすい
+    # - 同時最適化を試すなら component_selector="all" を指定し、両段の協調改善を促す選択肢もある
+    #   例: dspy.GEPA(..., component_selector="all", ...)
+
+    # NOTE: メトリクスの微調整（軽量のまま）について
+    # - meta 反映の軽い加点：meta に有用語があり caption に自然に反映されていれば +ε
+    # - keywords 過剰抑制：keywords が過多（例: 6 以上）のときにごく小さな減衰を掛ける
+    # - 本デモではスコア式は維持し、GEPA 時フィードバックに観測未反映/観測にない語を追記して改善を誘導
 
     log_gepa_estimate(
         gepa=gepa,
@@ -272,4 +376,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

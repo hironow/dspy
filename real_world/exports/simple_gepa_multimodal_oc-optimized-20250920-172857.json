@@ -1,0 +1,83 @@
+{
+  "analyze": {
+    "traces": [],
+    "train": [],
+    "demos": [],
+    "signature": {
+      "instructions": "観測は主体/属性/行為/背景を箇条書き、作文は1文に要点を統合し keywords 併記。",
+      "fields": [
+        {
+          "prefix": "Image:",
+          "description": "Input image (structured)"
+        },
+        {
+          "prefix": "Objects:",
+          "description": "Main objects (1–4 short nouns)"
+        },
+        {
+          "prefix": "Attributes:",
+          "description": "Colors/shapes (1–4)"
+        },
+        {
+          "prefix": "Actions:",
+          "description": "Key actions/states (0–3)"
+        },
+        {
+          "prefix": "Scene:",
+          "description": "One short phrase, e.g., '屋外'"
+        },
+        {
+          "prefix": "Meta:",
+          "description": "Optional hints, short tokens"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "compose": {
+    "traces": [],
+    "train": [],
+    "demos": [],
+    "signature": {
+      "instructions": "観測は主体/属性/行為/背景を箇条書き、作文は1文に要点を統合し keywords 併記。",
+      "fields": [
+        {
+          "prefix": "Objects:",
+          "description": "From Analyze.objects"
+        },
+        {
+          "prefix": "Attributes:",
+          "description": "From Analyze.attributes"
+        },
+        {
+          "prefix": "Actions:",
+          "description": "From Analyze.actions"
+        },
+        {
+          "prefix": "Scene:",
+          "description": "From Analyze.scene"
+        },
+        {
+          "prefix": "Meta:",
+          "description": "From Analyze.meta"
+        },
+        {
+          "prefix": "Caption:",
+          "description": "1–2 sentences. Subject→attributes→action→background."
+        },
+        {
+          "prefix": "Keywords:",
+          "description": "Short nouns (<=5)"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "metadata": {
+    "dependency_versions": {
+      "python": "3.12",
+      "dspy": "3.0.3",
+      "cloudpickle": "3.1"
+    }
+  }
+}
