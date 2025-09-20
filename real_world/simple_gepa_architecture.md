@@ -143,6 +143,69 @@ GEPA後: route / from_* / rerank の instructions が、適切なソース選択
 
 ---
 
+## 5) simple_gepa_multimodal_caption.py（画像→ caption/keywords：単段）
+
+```
+[Input] image (dspy.Image)
+    |
+    v
+[caption] dspy.Predict("image: dspy.Image -> caption: str, keywords: list[str]")  --(LM)--> {caption, keywords}
+    |
+    v
+[Output] caption, keywords
+
+GEPA後: caption の instructions（説明の方針）が更新される可能性
+```
+
+- Evaluate の metric（カバレッジ＋簡潔）
+  - 目的: gold.keywords が caption+keywords に含まれる割合（coverage）、長文への軽いペナルティ
+  - 返り値: float（[0,1]）。複数例の平均を百分率で集計
+
+- GEPA の metric（フィードバック対応）
+  - 目的: 足りないキーワードの列挙、簡潔化の促しなど、短いテキストFBを返す
+  - 返り値: dspy.Prediction(score, feedback)
+  - 反射: MultiModalInstructionProposer を使い、画像を構造化のまま反射LMへ
+
+---
+
+## 6) simple_gepa_multimodal_observe_compose.py（観測→作文：二段構成 + Signature）
+
+```
+[Input] image (dspy.Image)
+    |
+    v
+[analyze]  dspy.Predict(Analyze: image -> objects, attributes, actions, scene, meta)  --(LM)--> observations
+    |
+    v
+[compose]  dspy.Predict(Compose: observations -> caption, keywords)                    --(LM)--> {caption, keywords}
+    |
+    v
+[Output] caption, keywords
+
+GEPA後: analyze/compose の instructions が段別に洗練（観測語彙→説明の反映が進む）
+```
+
+- Evaluate の metric（カバレッジ＋簡潔）
+  - 目的: gold.keywords の包含と簡潔性
+  - 返り値: float（[0,1]）
+
+- GEPA の metric（段別フィードバック + trace 整合性）
+  - 目的: pred_name に応じた段別FBを返す（analyze: 観測の不足、compose: 説明の不足/簡潔化）
+  - trace活用: analyze 出力（objects/attributes/actions/scene/meta）が caption/keywords に反映されているか検査
+    - 観測未反映: 観測にあるが出力に現れない語を指摘
+    - 観測にない語: 出力側にのみ現れる語を注意喚起
+  - 構文失敗: add_format_failure_as_feedback=True により、フォーマット失敗も反射データに含み、
+    「指定フィールド・型・構造の厳守」を FB として促す
+  - 返り値: dspy.Prediction(score, feedback)
+  - 反射: MultiModalInstructionProposer を使用（画像を構造化のまま反射LMへ）
+
+備考:
+- 本例は dspy.Signature（Analyze/Compose）を導入し、I/O の型・役割を明示。
+- GEPA が最適化するのは instructions。Signature の doc/desc は最適化対象外だが、
+  Adapter の構造化プロンプトや失敗時の構造指示に参照され、安定性に寄与。
+
+---
+
 ## 共通メモ（Evaluate と GEPA の役割）
 
 ```
@@ -155,4 +218,3 @@ GEPA:
   - pred_name/pred_trace により、どの Predictor をどう改善するかを具体化（instructions を進化）
   - 予算（auto / max_metric_calls）内で、反射→候補生成→評価→Pareto 追跡→最良候補を返す
 ```
-
