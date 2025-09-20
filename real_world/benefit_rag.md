@@ -19,6 +19,21 @@
 
 - 対象は「Predictor の instructions（自然言語仕様）」
   - 実装例では `rewrite: question -> rewritten_query` と `answer: question, passages -> answer` を最適化。
+    - これは dspy.Signature の省略表記です（`question` はフィールド名で、型は `str` など）。
+    - 例（dspy.Signature での定義）:
+
+      ```python
+      class Rewrite(dspy.Signature):
+          """Rewrite the user question into a retrieval-friendly query."""
+          question: str = dspy.InputField(desc="Original user question")
+          rewritten_query: str = dspy.OutputField(desc="Simplified query preserving entities")
+
+      class Answer(dspy.Signature):
+          """Answer the question using only the provided passages as evidence."""
+          question: str = dspy.InputField(desc="Original user question")
+          passages: list[str] = dspy.InputField(desc="Retrieved context passages")
+          answer: str = dspy.OutputField(desc="Concise, grounded answer")
+      ```
   - 検索（retrieve）は Executor（Adapter 呼び出し）に分離し、最適化対象から外す。
 - 入力は question と passages（retrieve 結果）
   - rewrite は一般則（固有名詞維持/同義語補完/曖昧語の明確化）、answer は根拠引用/簡潔性などの一般則を instructions に。
@@ -155,3 +170,38 @@ rewriteの場合も同様に、`pred_trace[0][1]` から `{"question": ...}`、`
 
 要するに、GEPA は RAG の「クエリ最適化」と「根拠に基づく回答」の運用を、
 評価可能な原則に基づいて自動・系統的に洗練し、再現性・説明責任・スケール性を備えた改善プロセスに変えてくれます。
+
+
+## 目的次第だが、Adapter方式を基本にしやすい理由
+
+実装/運用の観点では「どちらが絶対に良い」ではなく目的次第ですが、GEPA 前提の最適化と再現性・テスト容易性を重視する場合、simple_gepa_vector_rag の Adapter 方式を基本にする利点が多いです。
+
+- 責務分離（Controller/Executor/Adapter）
+  - rewrite/answer の instructions だけを最適化対象にし、retrieve は Adapter で外部依存を吸収。設計が明確で差し替えが容易。
+- pred_trace/pred_name を活かしやすい
+  - retrieve 結果（passages）を明示的に answer の入力へ渡すため、pred_trace から passages を簡単かつ確実に取得でき、groundedness 検査や段階別FBがシンプル。
+- 再現性とテスト
+  - InMemoryTfIdfAdapter のような決定的ダミーで端から端までpytest可能。外部サービス揺らぎの影響を受けにくい。
+- 依存差し替え
+  - VectorAdapter(upsert, query) という統一IFにより、Pinecone/Weaviate/Qdrant/pgvector 等の導入・切替が局所化。
+
+一方で、既存プロダクションが dspy.settings.rm（Retrieval Module）で固まっている場合は、rm を活かすのも合理的です。その場合でも、answer 予測器に passages を必ず入力として渡し、pred_trace 経由でメトリクス/FBが扱えるようにするのがポイントです。
+
+### rm を活かしつつ Adapter へ橋渡しする最小例
+
+```python
+from real_world.vector_adapter import VectorAdapter, QueryHit
+
+class RMAdapter(VectorAdapter):
+    def __init__(self, rm):
+        self.rm = rm  # 例: dspy.settings.rm に設定済みの retriever
+
+    def upsert(self, docs):
+        raise NotImplementedError("Indexing is handled by the existing pipeline.")
+
+    def query(self, text: str, *, k: int = 5, filter: dict | None = None):
+        passages = self.rm(text, k=k)  # retriever の返り値を想定
+        return [QueryHit(id=str(i), text=p, score=1.0) for i, p in enumerate(passages)]
+```
+
+このように、rm 既存資産を活かしつつ Adapter 方式の書き心地（責務分離・テスト性・pred_traceの取り回し）を得ることも可能です。
