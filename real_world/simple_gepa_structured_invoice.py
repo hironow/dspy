@@ -29,6 +29,7 @@ from real_world.factory import invoice_dummy
 from real_world.dummy_lm import make_dummy_lm_json, configure_dummy_adapter
 from real_world.utils import summarize_gepa_results, summarize_before_after
 from real_world.cost import log_baseline_estimate, log_gepa_estimate, log_recorded_gepa_cost
+from real_world.wandb import get_wandb_args
 
 
 class InvoiceIE(dspy.Module):
@@ -334,6 +335,7 @@ def main():
         reflection_lm=reflection_lm,
         reflection_minibatch_size=1,
         track_stats=True,
+        **get_wandb_args(project="real_world", run_name=f"{args.save_prefix}-{time.strftime('%Y%m%d-%H%M%S')}", enabled=not args.dummy),
     )
 
     logger.info("Running GEPA compile (max_metric_calls={})...", gepa.max_metric_calls)
