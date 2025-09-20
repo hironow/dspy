@@ -246,50 +246,9 @@ def main():
     if hasattr(optimized, "detailed_results") and optimized.detailed_results is not None:
         log_recorded_gepa_cost(optimized.detailed_results, num_predictors=preds, logger=logger)
 
-    # Save programs in DSPy standard format (.json state)
-    try:
-        os.makedirs(args.save_dir, exist_ok=True)
-        stamp = time.strftime("%Y%m%d-%H%M%S")
-        baseline_path = os.path.join(args.save_dir, f"{args.save_prefix}-baseline-{stamp}.json")
-        optimized_path = os.path.join(args.save_dir, f"{args.save_prefix}-optimized-{stamp}.json")
-
-        program.save(baseline_path)
-        optimized.save(optimized_path)
-        logger.success("Saved baseline program: {}", baseline_path)
-        logger.success("Saved optimized program: {}", optimized_path)
-
-        # Save detailed_results (if any) as JSON for later inspection
-        if hasattr(optimized, "detailed_results") and optimized.detailed_results is not None:
-            dr_path = os.path.join(args.save_dir, f"{args.save_prefix}-gepa-details-{stamp}.json")
-            try:
-                dr_dict = optimized.detailed_results.to_dict()
-            except Exception:
-                # Fallback: minimal, serializable snapshot
-                dr = optimized.detailed_results
-                try:
-                    cand_texts = []
-                    for cand in getattr(dr, "candidates", []) or []:
-                        if hasattr(cand, "named_predictors"):
-                            cand_texts.append({name: p.signature.instructions for name, p in cand.named_predictors()})
-                        elif isinstance(cand, dict):
-                            cand_texts.append(cand)
-                        else:
-                            cand_texts.append(str(cand))
-                    dr_dict = {
-                        "candidates": cand_texts,
-                        "val_aggregate_scores": getattr(dr, "val_aggregate_scores", []),
-                        "discovery_eval_counts": getattr(dr, "discovery_eval_counts", []),
-                        "seed": getattr(dr, "seed", None),
-                    }
-                except Exception as e2:
-                    logger.warning("Failed to build fallback GEPA details: {}", e2)
-                    dr_dict = None
-            if dr_dict is not None:
-                with open(dr_path, "w", encoding="utf-8") as f:
-                    json.dump(dr_dict, f, ensure_ascii=False, indent=2)
-                logger.success("Saved GEPA detailed results: {}", dr_path)
-    except Exception as e:
-        logger.warning("Failed to save DSPy programs: {}", e)
+    # Save artifacts
+    from real_world.save import save_artifacts
+    save_artifacts(program, optimized, save_dir=args.save_dir, prefix=args.save_prefix, logger=logger, save_details=True)
 
 
 # (Common display helpers moved to real_world.utils)

@@ -361,22 +361,8 @@ def main():
     changed = sum(1 for k in set(before) | set(after) if before.get(k) != after.get(k))
     logger.info("Instructions changed: {}", changed)
 
-    try:
-        os.makedirs(args.save_dir, exist_ok=True)
-        stamp = time.strftime("%Y%m%d-%H%M%S")
-        bpath = os.path.join(args.save_dir, f"{args.save_prefix}-baseline-{stamp}.json")
-        opath = os.path.join(args.save_dir, f"{args.save_prefix}-optimized-{stamp}.json")
-        program.save(bpath)
-        optimized.save(opath)
-        logger.success("Saved baseline: {}", bpath)
-        logger.success("Saved optimized: {}", opath)
-        if hasattr(optimized, "detailed_results") and optimized.detailed_results is not None:
-            dr_path = os.path.join(args.save_dir, f"{args.save_prefix}-gepa-details-{stamp}.json")
-            with open(dr_path, "w", encoding="utf-8") as f:
-                json.dump(optimized.detailed_results.to_dict(), f, ensure_ascii=False, indent=2)
-            logger.success("Saved GEPA details: {}", dr_path)
-    except Exception as e:
-        logger.warning("Failed to save artifacts: {}", e)
+    from real_world.save import save_artifacts
+    save_artifacts(program, optimized, save_dir=args.save_dir, prefix=args.save_prefix, logger=logger, save_details=True)
 
 
 if __name__ == "__main__":
