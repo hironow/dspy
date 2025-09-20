@@ -14,21 +14,19 @@ Run (no external calls):
 from __future__ import annotations
 
 import argparse
-import os
 import re
 import sys
 import time
-import json
 from typing import Any
 
 from loguru import logger
 
 import dspy
-from real_world.helper import openai_gpt_4o_mini_lm, openai_gpt_4o_lm
-from real_world.factory import invoice_dummy
-from real_world.dummy_lm import make_dummy_lm_json, configure_dummy_adapter
-from real_world.utils import summarize_gepa_results, summarize_before_after
 from real_world.cost import log_baseline_estimate, log_gepa_estimate, log_recorded_gepa_cost
+from real_world.dummy_lm import configure_dummy_adapter, make_dummy_lm_json
+from real_world.factory import invoice_dummy
+from real_world.helper import openai_gpt_4o_lm, openai_gpt_4o_mini_lm
+from real_world.utils import summarize_before_after, summarize_gepa_results
 from real_world.wandb import get_wandb_args
 
 
@@ -38,9 +36,7 @@ class InvoiceIE(dspy.Module):
         # Structured extraction from free text
         self.extract = dspy.Predict("text -> vendor, date, amount, currency")
         # Normalization to canonical forms
-        self.normalize = dspy.Predict(
-            "vendor, date, amount, currency -> vendor, date, amount, currency"
-        )
+        self.normalize = dspy.Predict("vendor, date, amount, currency -> vendor, date, amount, currency")
 
     def forward(self, text: str):
         # 1) Extract
@@ -188,7 +184,11 @@ def invoice_metric_with_feedback(
             "Use patterns like 'YYYY-MM-DD' for dates and parse numeric amounts."
         )
         # Point to any missing keys from predictor output
-        out_keys = set(getattr(p_outputs, "keys", lambda: p_outputs.keys())()) if hasattr(p_outputs, "keys") else set(p_outputs.__dict__.keys() if hasattr(p_outputs, "__dict__") else [])
+        out_keys = (
+            set(getattr(p_outputs, "keys", lambda: p_outputs.keys())())
+            if hasattr(p_outputs, "keys")
+            else set(p_outputs.__dict__.keys() if hasattr(p_outputs, "__dict__") else [])
+        )
         needed = {"vendor", "date", "amount", "currency"}
         missing = sorted(needed - out_keys)
         if missing:
@@ -222,9 +222,7 @@ def invoice_metric_with_feedback(
         # Currency normalization
         if pred_currency not in ISO_CURRENCIES:
             target_cur = gold_currency or "ISO code like 'JPY'"
-            fb.append(
-                f"Currency normalization: '{(src_curr or pred_currency) or ''}' -> '{target_cur}'."
-            )
+            fb.append(f"Currency normalization: '{(src_curr or pred_currency) or ''}' -> '{target_cur}'.")
 
         # Amount normalization
         if pred_amount is None:
@@ -335,7 +333,11 @@ def main():
         reflection_lm=reflection_lm,
         reflection_minibatch_size=1,
         track_stats=True,
-        **get_wandb_args(project="real_world", run_name=f"{args.save_prefix}-{time.strftime('%Y%m%d-%H%M%S')}", enabled=not args.dummy),
+        **get_wandb_args(
+            project="real_world",
+            run_name=f"{args.save_prefix}-{time.strftime('%Y%m%d-%H%M%S')}",
+            enabled=not args.dummy,
+        ),
     )
 
     logger.info("Running GEPA compile (max_metric_calls={})...", gepa.max_metric_calls)
@@ -364,7 +366,10 @@ def main():
     logger.info("Instructions changed: {}", changed)
 
     from real_world.save import save_artifacts
-    save_artifacts(program, optimized, save_dir=args.save_dir, prefix=args.save_prefix, logger=logger, save_details=True)
+
+    save_artifacts(
+        program, optimized, save_dir=args.save_dir, prefix=args.save_prefix, logger=logger, save_details=True
+    )
 
 
 if __name__ == "__main__":

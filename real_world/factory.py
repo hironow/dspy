@@ -47,14 +47,14 @@ import csv
 import json
 import random
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Sequence
 
 import dspy
-
 
 # -------------------------------
 # Internal utilities
 # -------------------------------
+
 
 def _split_train_val[T](items: Sequence[T], val_ratio: float = 0.5, seed: int = 0) -> tuple[list[T], list[T]]:
     rng = random.Random(seed)
@@ -76,6 +76,7 @@ def _ensure_str(x: Any) -> str:
 # -------------------------------
 # 1) Simple QA (basic + task-metric variants)
 # -------------------------------
+
 
 def basic_qa_dummy(locale: str = "ja") -> tuple[list[dspy.Example], list[dspy.Example]]:
     """Very small Japanese QA dataset (dummy)."""
@@ -117,6 +118,7 @@ task_metric_qa_from_pairs = basic_qa_from_pairs
 # -------------------------------
 # 2) Structured invoice extraction
 # -------------------------------
+
 
 def invoice_dummy(locale: str = "en") -> tuple[list[dspy.Example], list[dspy.Example]]:
     """Two tiny records; the 2nd intentionally non-ISO for normalization demo.
@@ -183,7 +185,9 @@ def invoice_from_records(
     return _split_train_val(exs, val_ratio=val_ratio, seed=seed)
 
 
-def invoice_from_csv(path: str | Path, *, val_ratio: float = 0.5, seed: int = 0) -> tuple[list[dspy.Example], list[dspy.Example]]:
+def invoice_from_csv(
+    path: str | Path, *, val_ratio: float = 0.5, seed: int = 0
+) -> tuple[list[dspy.Example], list[dspy.Example]]:
     path = Path(path)
     rows: list[dict[str, Any]] = []
     with path.open("r", newline="", encoding="utf-8") as f:
@@ -193,7 +197,9 @@ def invoice_from_csv(path: str | Path, *, val_ratio: float = 0.5, seed: int = 0)
     return invoice_from_records(rows, val_ratio=val_ratio, seed=seed)
 
 
-def invoice_from_jsonl(path: str | Path, *, val_ratio: float = 0.5, seed: int = 0) -> tuple[list[dspy.Example], list[dspy.Example]]:
+def invoice_from_jsonl(
+    path: str | Path, *, val_ratio: float = 0.5, seed: int = 0
+) -> tuple[list[dspy.Example], list[dspy.Example]]:
     path = Path(path)
     rows: list[dict[str, Any]] = []
     with path.open("r", encoding="utf-8") as f:
@@ -206,6 +212,7 @@ def invoice_from_jsonl(path: str | Path, *, val_ratio: float = 0.5, seed: int = 
 # -------------------------------
 # 3) Routed multi-source (DB / RAG / Graph)
 # -------------------------------
+
 
 def routed_sources_dummy(locale: str = "en") -> tuple[list[dspy.Example], list[dspy.Example]]:
     if locale == "ja":
@@ -266,7 +273,9 @@ def routed_sources_from_records(
     return _split_train_val(exs, val_ratio=val_ratio, seed=seed)
 
 
-def routed_sources_from_csv(path: str | Path, *, val_ratio: float = 0.5, seed: int = 0) -> tuple[list[dspy.Example], list[dspy.Example]]:
+def routed_sources_from_csv(
+    path: str | Path, *, val_ratio: float = 0.5, seed: int = 0
+) -> tuple[list[dspy.Example], list[dspy.Example]]:
     path = Path(path)
     rows: list[dict[str, Any]] = []
     with path.open("r", newline="", encoding="utf-8") as f:
@@ -276,7 +285,9 @@ def routed_sources_from_csv(path: str | Path, *, val_ratio: float = 0.5, seed: i
     return routed_sources_from_records(rows, val_ratio=val_ratio, seed=seed)
 
 
-def routed_sources_from_jsonl(path: str | Path, *, val_ratio: float = 0.5, seed: int = 0) -> tuple[list[dspy.Example], list[dspy.Example]]:
+def routed_sources_from_jsonl(
+    path: str | Path, *, val_ratio: float = 0.5, seed: int = 0
+) -> tuple[list[dspy.Example], list[dspy.Example]]:
     path = Path(path)
     rows: list[dict[str, Any]] = []
     with path.open("r", encoding="utf-8") as f:
@@ -311,6 +322,7 @@ __all__ = [
 # -------------------------------
 # 4) Multimodal image captioning
 # -------------------------------
+
 
 def image_caption_dummy(locale: str = "ja") -> tuple[list[dspy.Example], list[dspy.Example]]:
     """Tiny multimodal caption dataset (image -> caption/keywords).

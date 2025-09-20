@@ -15,22 +15,21 @@ from __future__ import annotations
 import argparse
 import sys
 import time
-from typing import Any
 
 from loguru import logger
 
 import dspy
 from dspy.adapters.types import Image as DspyImage
-from dspy.teleprompt.gepa.instruction_proposal import MultiModalInstructionProposer
 from dspy.teleprompt.bootstrap_trace import FailedPrediction
-
-from real_world.helper import openai_gpt_4o_mini_lm, openai_gpt_4o_lm
-from real_world.factory import image_caption_dummy
-from real_world.dummy_lm import make_dummy_lm_json, configure_dummy_adapter
-from real_world.utils import summarize_gepa_results, summarize_before_after
+from dspy.teleprompt.gepa.instruction_proposal import MultiModalInstructionProposer
 from real_world.cost import log_baseline_estimate, log_gepa_estimate, log_recorded_gepa_cost
-from real_world.wandb import get_wandb_args
+from real_world.dummy_lm import configure_dummy_adapter, make_dummy_lm_json
+from real_world.factory import image_caption_dummy
+from real_world.helper import openai_gpt_4o_lm, openai_gpt_4o_mini_lm
 from real_world.save import save_artifacts
+from real_world.utils import summarize_before_after, summarize_gepa_results
+from real_world.wandb import get_wandb_args
+
 
 # Signatures: using typed fields improves clarity and parsing stability
 #
@@ -167,21 +166,18 @@ def caption_metric(
                     obs_objects = _normalize_words(list(out_items.get("objects", []) or []))
                     obs_attributes = _normalize_words(list(out_items.get("attributes", []) or []))
                     obs_actions = _normalize_words(list(out_items.get("actions", []) or []))
-                    obs_scene = {str(out_items.get("scene", "")).strip().lower()} if out_items.get("scene", "") else set()
-                    obs_meta = _normalize_words(list(out_items.get("meta", []) or []))
-                    analyze_obs_tokens = (
-                        obs_objects | obs_attributes | obs_actions | obs_scene | obs_meta
+                    obs_scene = (
+                        {str(out_items.get("scene", "")).strip().lower()} if out_items.get("scene", "") else set()
                     )
+                    obs_meta = _normalize_words(list(out_items.get("meta", []) or []))
+                    analyze_obs_tokens = obs_objects | obs_attributes | obs_actions | obs_scene | obs_meta
                     break
     except Exception:
         pass
 
     # Reflect missing-from-composition observations and possibly spurious keywords
     if analyze_obs_tokens:
-        not_reflected = [
-            tok for tok in sorted(analyze_obs_tokens)
-            if (tok not in caption_lower and tok not in pred_k)
-        ]
+        not_reflected = [tok for tok in sorted(analyze_obs_tokens) if (tok not in caption_lower and tok not in pred_k)]
         if not_reflected:
             fb_parts.append(f"観測未反映: {not_reflected}")
 
@@ -198,14 +194,10 @@ def caption_metric(
 
     if pred_name == "analyze":
         if missing:
-            fb_parts.append(
-                f"観測に不足: {missing}（対象物・属性・行為・背景の候補として抽出してください）"
-            )
+            fb_parts.append(f"観測に不足: {missing}（対象物・属性・行為・背景の候補として抽出してください）")
         else:
             fb_parts.append("観測は主要要素を網羅しています。")
-        fb_parts.append(
-            "画像から主体→属性（色・形）→行為→背景の順で、簡潔に語彙を列挙。メタ情報も加味。"
-        )
+        fb_parts.append("画像から主体→属性（色・形）→行為→背景の順で、簡潔に語彙を列挙。メタ情報も加味。")
     elif pred_name == "compose":
         if missing:
             fb_parts.append(f"説明に不足: {missing}（1〜2文で必ず触れる）")
@@ -213,9 +205,7 @@ def caption_metric(
             fb_parts.append("説明は主要キーワードを十分に含んでいます。")
         if len(pred_caption) > 180:
             fb_parts.append("説明は簡潔に（1〜2文、要点先述）。")
-        fb_parts.append(
-            "順序: 主体/属性/行為/背景。観測語彙（objects/attributes/actions/scene/meta）を自然に統合。"
-        )
+        fb_parts.append("順序: 主体/属性/行為/背景。観測語彙（objects/attributes/actions/scene/meta）を自然に統合。")
     else:
         if missing:
             fb_parts.append(f"不足キーワード: {missing}")

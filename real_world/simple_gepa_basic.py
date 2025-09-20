@@ -25,17 +25,16 @@ from __future__ import annotations
 
 import argparse
 import sys
-import math
-import os
 import time
-import json
+
 from loguru import logger
+
 import dspy
-from real_world.helper import openai_gpt_4o_mini_lm, openai_gpt_4o_lm
-from real_world.factory import basic_qa_dummy
-from real_world.dummy_lm import make_dummy_lm_json, configure_dummy_adapter
-from real_world.utils import summarize_gepa_results, summarize_before_after
 from real_world.cost import log_baseline_estimate, log_gepa_estimate, log_recorded_gepa_cost
+from real_world.dummy_lm import configure_dummy_adapter, make_dummy_lm_json
+from real_world.factory import basic_qa_dummy
+from real_world.helper import openai_gpt_4o_lm, openai_gpt_4o_mini_lm
+from real_world.utils import summarize_before_after, summarize_gepa_results
 from real_world.wandb import get_wandb_args
 
 
@@ -64,7 +63,9 @@ class SimpleQA(dspy.Module):
             return self.predict(question=rq)
 
 
-def qa_metric_with_feedback(gold: Example, pred: dspy.Prediction, trace=None, pred_name: str | None = None, pred_trace=None):
+def qa_metric_with_feedback(
+    gold: Example, pred: dspy.Prediction, trace=None, pred_name: str | None = None, pred_trace=None
+):
     """
     GEPA-friendly metric: returns either a float or a dict-like Prediction with `score` and `feedback`.
 
@@ -97,8 +98,12 @@ def qa_metric_with_feedback(gold: Example, pred: dspy.Prediction, trace=None, pr
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dummy", action="store_true", help="Use DummyLM for a local dry run")
-    parser.add_argument("--log-level", default="INFO", help="Log level for loguru (e.g., DEBUG, INFO, SUCCESS, WARNING)")
-    parser.add_argument("--save-dir", default="real_world/exports", help="Directory to save DSPy-standard program artifacts (.json)")
+    parser.add_argument(
+        "--log-level", default="INFO", help="Log level for loguru (e.g., DEBUG, INFO, SUCCESS, WARNING)"
+    )
+    parser.add_argument(
+        "--save-dir", default="real_world/exports", help="Directory to save DSPy-standard program artifacts (.json)"
+    )
     parser.add_argument("--save-prefix", default="simple_gepa", help="Filename prefix for saved artifacts")
     args = parser.parse_args()
 
@@ -119,9 +124,7 @@ def main():
         "次の日本語の質問に、短く正確に回答してください。回答は名詞一語を目指してください。"
     )
     # Capture baseline instructions before optimization (for BEFORE/AFTER output)
-    before_instructions = {
-        name: pred.signature.instructions for name, pred in program.named_predictors()
-    }
+    before_instructions = {name: pred.signature.instructions for name, pred in program.named_predictors()}
     trainset, valset = basic_qa_dummy(locale="ja")
     logger.info("Built tiny dataset — train: {}, val: {}", len(trainset), len(valset))
     logger.debug("Train sample: {}", trainset[0] if trainset else None)
@@ -195,7 +198,7 @@ def main():
         "Configuring GEPA (auto={}, track_stats={}, reflection_lm={})",
         auto_mode_for_log,
         True,
-        "yes" if 'reflection_lm' in locals() and reflection_lm is not None else "no",
+        "yes" if "reflection_lm" in locals() and reflection_lm is not None else "no",
     )
 
     if args.dummy:
@@ -205,7 +208,9 @@ def main():
             reflection_lm=reflection_lm,
             reflection_minibatch_size=1,
             track_stats=True,
-            **get_wandb_args(project="real_world", run_name=f"{args.save_prefix}-{time.strftime('%Y%m%d-%H%M%S')}", enabled=False),
+            **get_wandb_args(
+                project="real_world", run_name=f"{args.save_prefix}-{time.strftime('%Y%m%d-%H%M%S')}", enabled=False
+            ),
         )
     else:
         gepa = dspy.GEPA(
@@ -213,7 +218,9 @@ def main():
             auto="light",  # or set: max_metric_calls=..., or max_full_evals=...
             reflection_lm=reflection_lm,
             track_stats=True,
-            **get_wandb_args(project="real_world", run_name=f"{args.save_prefix}-{time.strftime('%Y%m%d-%H%M%S')}", enabled=True),
+            **get_wandb_args(
+                project="real_world", run_name=f"{args.save_prefix}-{time.strftime('%Y%m%d-%H%M%S')}", enabled=True
+            ),
         )
 
     log_gepa_estimate(
@@ -251,7 +258,10 @@ def main():
 
     # Save artifacts
     from real_world.save import save_artifacts
-    save_artifacts(program, optimized, save_dir=args.save_dir, prefix=args.save_prefix, logger=logger, save_details=True)
+
+    save_artifacts(
+        program, optimized, save_dir=args.save_dir, prefix=args.save_prefix, logger=logger, save_details=True
+    )
 
 
 # (Common display helpers moved to real_world.utils)

@@ -18,19 +18,16 @@ from __future__ import annotations
 
 import argparse
 import sys
-import os
 import time
-import json
-from typing import Any
 
 from loguru import logger
 
 import dspy
-from real_world.helper import openai_gpt_4o_mini_lm, openai_gpt_4o_lm
-from real_world.factory import routed_sources_dummy
-from real_world.dummy_lm import make_dummy_lm_json, configure_dummy_adapter
-from real_world.utils import summarize_gepa_results, summarize_before_after
 from real_world.cost import log_baseline_estimate, log_gepa_estimate, log_recorded_gepa_cost
+from real_world.dummy_lm import configure_dummy_adapter, make_dummy_lm_json
+from real_world.factory import routed_sources_dummy
+from real_world.helper import openai_gpt_4o_lm, openai_gpt_4o_mini_lm
+from real_world.utils import summarize_before_after, summarize_gepa_results
 from real_world.wandb import get_wandb_args
 
 
@@ -156,7 +153,7 @@ def routed_metric_with_feedback(
     # Helper to extract routed choice from full trace
     def find_routed_source(full_trace) -> str | None:
         try:
-            for (p, inputs, outputs) in full_trace or []:
+            for p, inputs, outputs in full_trace or []:
                 if hasattr(outputs, "source"):
                     return getattr(outputs, "source", None)
         except Exception:
@@ -222,7 +219,9 @@ def routed_metric_with_feedback(
             if hints:
                 fb.append(f"Rerank: Prefer candidate(s) from {hints} matching expected content.")
             else:
-                fb.append("Rerank: None of the candidates matched expected content; refine upstream or selection rules.")
+                fb.append(
+                    "Rerank: None of the candidates matched expected content; refine upstream or selection rules."
+                )
         else:
             fb.append("Rerank: Good selection; keep cheap features decisive (schema/keywords/length).")
 
@@ -273,7 +272,6 @@ def main():
 
     if args.dummy:
         logger.info("Configuring DummyLMs (JSONAdapter) for router/sources/reranker")
-        import itertools
 
         # Router LM cycles: db -> rag -> graph
         def route_responses():
@@ -335,6 +333,7 @@ def main():
 
     # Baseline
     from dspy.evaluate import Evaluate
+
     evaluator = Evaluate(devset=valset, metric=routed_metric_with_feedback, display_progress=False, num_threads=1)
 
     logger.info("Baseline (light policy)")
@@ -350,7 +349,11 @@ def main():
         reflection_lm=reflection_lm,
         reflection_minibatch_size=1,
         track_stats=True,
-        **get_wandb_args(project="real_world", run_name=f"{args.save_prefix}-{time.strftime('%Y%m%d-%H%M%S')}", enabled=not args.dummy),
+        **get_wandb_args(
+            project="real_world",
+            run_name=f"{args.save_prefix}-{time.strftime('%Y%m%d-%H%M%S')}",
+            enabled=not args.dummy,
+        ),
     )
 
     logger.info("Running GEPA compile (heavy policy)...")
@@ -377,7 +380,10 @@ def main():
         log_recorded_gepa_cost(optimized.detailed_results, num_predictors=len(program.predictors()), logger=logger)
 
     from real_world.save import save_artifacts
-    save_artifacts(program, optimized, save_dir=args.save_dir, prefix=args.save_prefix, logger=logger, save_details=True)
+
+    save_artifacts(
+        program, optimized, save_dir=args.save_dir, prefix=args.save_prefix, logger=logger, save_details=True
+    )
 
 
 if __name__ == "__main__":

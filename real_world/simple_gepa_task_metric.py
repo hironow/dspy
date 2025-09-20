@@ -22,17 +22,16 @@ from __future__ import annotations
 
 import argparse
 import sys
-import os
 import time
-import json
+
 from loguru import logger
 
 import dspy
-from real_world.helper import openai_gpt_4o_mini_lm, openai_gpt_4o_lm
-from real_world.factory import task_metric_qa_dummy
-from real_world.dummy_lm import make_dummy_lm_json, configure_dummy_adapter
-from real_world.utils import summarize_gepa_results, summarize_before_after
 from real_world.cost import log_baseline_estimate, log_gepa_estimate, log_recorded_gepa_cost
+from real_world.dummy_lm import configure_dummy_adapter, make_dummy_lm_json
+from real_world.factory import task_metric_qa_dummy
+from real_world.helper import openai_gpt_4o_lm, openai_gpt_4o_mini_lm
+from real_world.utils import summarize_before_after, summarize_gepa_results
 from real_world.wandb import get_wandb_args
 
 
@@ -71,7 +70,9 @@ def _normalize_color(s: str) -> str:
     return s
 
 
-def qa_metric_task_specific(gold: Example, pred: dspy.Prediction, trace=None, pred_name: str | None = None, pred_trace=None):
+def qa_metric_task_specific(
+    gold: Example, pred: dspy.Prediction, trace=None, pred_name: str | None = None, pred_trace=None
+):
     """
     Task-specific metric:
     - Correctness: allow tiny synonym set (青/ブルー, 黄色/イエロー...). Near-miss (edit distance<=1) gets partial credit.
@@ -102,8 +103,8 @@ def qa_metric_task_specific(gold: Example, pred: dspy.Prediction, trace=None, pr
             for j in range(1, m + 1):
                 cost = 0 if a[i - 1] == b[j - 1] else 1
                 dp[i][j] = min(
-                    dp[i - 1][j] + 1,      # delete
-                    dp[i][j - 1] + 1,      # insert
+                    dp[i - 1][j] + 1,  # delete
+                    dp[i][j - 1] + 1,  # insert
                     dp[i - 1][j - 1] + cost,  # replace
                 )
         return dp[n][m]
@@ -233,7 +234,11 @@ def main():
         reflection_lm=reflection_lm,
         reflection_minibatch_size=1,
         track_stats=True,
-        **get_wandb_args(project="real_world", run_name=f"{args.save_prefix}-{time.strftime('%Y%m%d-%H%M%S')}", enabled=not args.dummy),
+        **get_wandb_args(
+            project="real_world",
+            run_name=f"{args.save_prefix}-{time.strftime('%Y%m%d-%H%M%S')}",
+            enabled=not args.dummy,
+        ),
     )
 
     logger.info("Running GEPA compile (max_metric_calls={})...", gepa.max_metric_calls)
@@ -259,7 +264,10 @@ def main():
 
     # Save artifacts
     from real_world.save import save_artifacts
-    save_artifacts(program, optimized, save_dir=args.save_dir, prefix=args.save_prefix, logger=logger, save_details=True)
+
+    save_artifacts(
+        program, optimized, save_dir=args.save_dir, prefix=args.save_prefix, logger=logger, save_details=True
+    )
 
 
 if __name__ == "__main__":

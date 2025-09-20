@@ -38,11 +38,11 @@ model 部分はハイフンをアンダースコアで置き換えた表記で�
 from __future__ import annotations
 
 import os
-from typing import Any, Dict
+from typing import Any
 
 import dspy
 
-_LM_CACHE: Dict[str, dspy.LM] = {}
+_LM_CACHE: dict[str, dspy.LM] = {}
 
 
 def _mk_key(provider: str, model: str, kwargs: dict[str, Any]) -> str:
@@ -125,4 +125,3 @@ __all__ = [
     "configure_anthropic",
     # note: alias names are provided dynamically via __getattr__
 ]
-

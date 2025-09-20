@@ -11,24 +11,20 @@ from __future__ import annotations
 
 import argparse
 import sys
-import os
 import time
-import json
-from typing import Any
 
 from loguru import logger
 
 import dspy
 from dspy.adapters.types import Image as DspyImage
 from dspy.teleprompt.gepa.instruction_proposal import MultiModalInstructionProposer
-
-from real_world.helper import openai_gpt_4o_mini_lm, openai_gpt_4o_lm
-from real_world.factory import image_caption_dummy
-from real_world.dummy_lm import make_dummy_lm_json, configure_dummy_adapter
-from real_world.utils import summarize_gepa_results, summarize_before_after
 from real_world.cost import log_baseline_estimate, log_gepa_estimate, log_recorded_gepa_cost
-from real_world.wandb import get_wandb_args
+from real_world.dummy_lm import configure_dummy_adapter, make_dummy_lm_json
+from real_world.factory import image_caption_dummy
+from real_world.helper import openai_gpt_4o_lm, openai_gpt_4o_mini_lm
 from real_world.save import save_artifacts
+from real_world.utils import summarize_before_after, summarize_gepa_results
+from real_world.wandb import get_wandb_args
 
 
 class Captioner(dspy.Module):
@@ -48,7 +44,9 @@ def _normalize_words(words: list[str]) -> set[str]:
     return {str(w or "").strip().lower() for w in words if str(w or "").strip()}
 
 
-def caption_metric(gold: dspy.Example, pred: dspy.Prediction, trace=None, pred_name: str | None = None, pred_trace=None):
+def caption_metric(
+    gold: dspy.Example, pred: dspy.Prediction, trace=None, pred_name: str | None = None, pred_trace=None
+):
     """Coverage-based metric with brevity hint.
 
     gold.keywords: list[str] expected key ideas
@@ -147,6 +145,7 @@ def main():
         reflection_lm = openai_gpt_4o_lm
 
     from dspy.evaluate import Evaluate
+
     evaluator = Evaluate(devset=valset, metric=caption_metric, display_progress=False, num_threads=1)
 
     logger.info("Baseline evaluation on {} validation examples...", len(valset))
@@ -164,7 +163,11 @@ def main():
         instruction_proposer=proposer,
         reflection_minibatch_size=1,
         track_stats=True,
-        **get_wandb_args(project="real_world", run_name=f"{args.save_prefix}-{time.strftime('%Y%m%d-%H%M%S')}", enabled=not args.dummy),
+        **get_wandb_args(
+            project="real_world",
+            run_name=f"{args.save_prefix}-{time.strftime('%Y%m%d-%H%M%S')}",
+            enabled=not args.dummy,
+        ),
     )
 
     log_gepa_estimate(
@@ -187,7 +190,9 @@ def main():
     if hasattr(optimized, "detailed_results") and optimized.detailed_results is not None:
         log_recorded_gepa_cost(optimized.detailed_results, num_predictors=len(program.predictors()), logger=logger)
 
-    save_artifacts(program, optimized, save_dir=args.save_dir, prefix=args.save_prefix, logger=logger, save_details=True)
+    save_artifacts(
+        program, optimized, save_dir=args.save_dir, prefix=args.save_prefix, logger=logger, save_details=True
+    )
 
 
 if __name__ == "__main__":

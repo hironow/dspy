@@ -9,8 +9,8 @@ from __future__ import annotations
 from typing import Any, Iterable
 
 import dspy
-from dspy.utils.dummies import DummyLM
 from dspy.adapters.json_adapter import JSONAdapter
+from dspy.utils.dummies import DummyLM
 
 _JSON_ADAPTER: JSONAdapter | None = None
 
@@ -23,7 +23,11 @@ def json_adapter() -> JSONAdapter:
     return _JSON_ADAPTER
 
 
-def make_dummy_lm_json(responses: Iterable[dict[str, Any]] | dict[str, dict[str, Any]] | list[dict[str, Any]], *, follow_examples: bool = False) -> DummyLM:
+def make_dummy_lm_json(
+    responses: Iterable[dict[str, Any]] | dict[str, dict[str, Any]] | list[dict[str, Any]],
+    *,
+    follow_examples: bool = False,
+) -> DummyLM:
     """Create a DummyLM that emits JSON-formatted outputs matching DSPy signatures.
 
     - `responses` can be a generator/iterator of dicts, a list of dicts, or a mapping
@@ -47,4 +51,3 @@ __all__ = [
     "make_dummy_lm_json",
     "configure_dummy_adapter",
 ]
-

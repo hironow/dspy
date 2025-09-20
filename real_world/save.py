@@ -39,7 +39,9 @@ def _dr_to_dict(dr: Any) -> dict[str, Any] | None:
             return {
                 "candidates": cand_texts,
                 "val_aggregate_scores": getattr(dr, "val_aggregate_scores", []),
-                "per_val_instance_best_candidates": [list(s) for s in getattr(dr, "per_val_instance_best_candidates", []) or []],
+                "per_val_instance_best_candidates": [
+                    list(s) for s in getattr(dr, "per_val_instance_best_candidates", []) or []
+                ],
                 "discovery_eval_counts": getattr(dr, "discovery_eval_counts", []),
                 "seed": getattr(dr, "seed", None),
             }
@@ -86,4 +88,3 @@ def save_artifacts(
 
 
 __all__ = ["save_artifacts"]
-

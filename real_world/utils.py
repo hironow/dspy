@@ -35,7 +35,9 @@ def _format_gepa_results_table(dr: Any, top_k: int = 10) -> str:
         rows = rows[: min(top_k, len(rows))]
 
         headers = ("Idx", "Score", "Best@Val", "DiscoveryCalls", "Best?")
-        cols = list(zip(*([headers] + [(str(i), f"{s:.3f}", str(c), str(d), b) for i, s, c, d, b in rows])))
+        cols = list(
+            zip(*([headers] + [(str(i), f"{s:.3f}", str(c), str(d), b) for i, s, c, d, b in rows]), strict=False)
+        )
         widths = [max(len(x) for x in col) for col in cols]
 
         def fmt_row(cells):
@@ -50,11 +52,14 @@ def _format_gepa_results_table(dr: Any, top_k: int = 10) -> str:
         return ""
 
 
-def _format_before_after_instructions_table(before: dict[str, str], after: dict[str, str], max_col_width: int = 90) -> str:
+def _format_before_after_instructions_table(
+    before: dict[str, str], after: dict[str, str], max_col_width: int = 90
+) -> str:
     try:
+
         def compact(s: str) -> str:
             s = " ".join(str(s or "").split())
-            return (s if len(s) <= max_col_width else s[: max_col_width - 3] + "...")
+            return s if len(s) <= max_col_width else s[: max_col_width - 3] + "..."
 
         keys = sorted(set(before) | set(after))
         if not keys:
@@ -67,7 +72,7 @@ def _format_before_after_instructions_table(before: dict[str, str], after: dict[
             rows.append((k, b, a, ch))
 
         headers = ("Predictor", "Before", "After", "Changed?")
-        cols = list(zip(*([headers] + rows)))
+        cols = list(zip(*([headers] + rows), strict=False))
         widths = [max(len(str(x)) for x in col) for col in cols]
 
         def fmt_row(cells):
@@ -102,10 +107,18 @@ def summarize_gepa_results(optimized: dspy.Module, logger=None, *, top_k: int = 
             print("\n" + table)
 
 
-def summarize_before_after(before_instructions: dict[str, str], optimized: dspy.Module, logger=None, *, max_col_width: int = 90) -> int:
+def summarize_before_after(
+    before_instructions: dict[str, str], optimized: dspy.Module, logger=None, *, max_col_width: int = 90
+) -> int:
     after_instructions = {name: pred.signature.instructions for name, pred in optimized.named_predictors()}
-    table = _format_before_after_instructions_table(before_instructions, after_instructions, max_col_width=max_col_width)
-    changed = sum(1 for k in set(before_instructions) | set(after_instructions) if before_instructions.get(k) != after_instructions.get(k))
+    table = _format_before_after_instructions_table(
+        before_instructions, after_instructions, max_col_width=max_col_width
+    )
+    changed = sum(
+        1
+        for k in set(before_instructions) | set(after_instructions)
+        if before_instructions.get(k) != after_instructions.get(k)
+    )
     if table:
         if logger:
             logger.info("\n{}", table)
@@ -117,7 +130,7 @@ def summarize_before_after(before_instructions: dict[str, str], optimized: dspy.
         else:
             logger.info("Instructions updated ({} changed).", changed)
     else:
-        print("Instructions updated ({} changed).".format(changed) if changed else "Instructions unchanged.")
+        print(f"Instructions updated ({changed} changed)." if changed else "Instructions unchanged.")
     return changed
 
 
@@ -125,4 +138,3 @@ __all__ = [
     "summarize_gepa_results",
     "summarize_before_after",
 ]
-
