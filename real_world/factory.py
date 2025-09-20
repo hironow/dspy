@@ -47,7 +47,7 @@ import csv
 import json
 import random
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Sequence, TypeVar
 
 import dspy
 
@@ -56,7 +56,10 @@ import dspy
 # -------------------------------
 
 
-def _split_train_val[T](items: Sequence[T], val_ratio: float = 0.5, seed: int = 0) -> tuple[list[T], list[T]]:
+T = TypeVar("T")
+
+
+def _split_train_val(items: Sequence[T], val_ratio: float = 0.5, seed: int = 0) -> tuple[list[T], list[T]]:
     rng = random.Random(seed)
     idx = list(range(len(items)))
     rng.shuffle(idx)
@@ -105,7 +108,10 @@ def basic_qa_dummy(locale: str = "ja") -> tuple[list[dspy.Example], list[dspy.Ex
 def basic_qa_from_pairs(
     pairs: Sequence[tuple[str, str]], *, val_ratio: float = 0.5, seed: int = 0
 ) -> tuple[list[dspy.Example], list[dspy.Example]]:
-    """Build QA dataset from (question, answer) pairs."""
+    """Build a small QA dataset from (question, answer) pairs.
+
+    Returns (trainset, valset). Each example uses `question` as the sole input field.
+    """
     exs = [dspy.Example(question=q, answer=a).with_inputs("question") for q, a in pairs]
     return _split_train_val(exs, val_ratio=val_ratio, seed=seed)
 
@@ -215,6 +221,11 @@ def invoice_from_jsonl(
 
 
 def routed_sources_dummy(locale: str = "en") -> tuple[list[dspy.Example], list[dspy.Example]]:
+    """Tiny routed multi-source dataset.
+
+    Each example has a `query`, an `answer`, and a `preferred_source` hint among {db, rag, graph}.
+    Returns (trainset, valset) with identical contents for demo simplicity.
+    """
     if locale == "ja":
         train = [
             dspy.Example(
@@ -329,8 +340,9 @@ __all__ = [
 def image_caption_dummy(locale: str = "ja") -> tuple[list[dspy.Example], list[dspy.Example]]:
     """Tiny multimodal caption dataset (image -> caption/keywords).
 
-    We provide images as dspy.Image with URLs (no download required here). Gold has
-    keywords to evaluate simple coverage.
+    We provide images as dspy.Image with URLs (no download required here). Gold includes
+    `keywords` for a simple coverage-based metric. Returns (trainset, valset) with identical
+    contents for demo simplicity.
     """
     # Simple placeholder images (public picsum endpoints)
     img1 = dspy.Image(url="https://picsum.photos/id/237/300/200")  # dog
@@ -359,7 +371,7 @@ def image_caption_dummy(locale: str = "ja") -> tuple[list[dspy.Example], list[ds
 # -------------------------------
 
 
-def langextract_dummy() -> tuple[list[dspy.Example], list[dspy.Example]]:
+def langextract_dummy(locale: str = "en") -> tuple[list[dspy.Example], list[dspy.Example]]:
     """Tiny dummy dataset for langextract-style extraction.
 
     Each example has:

@@ -552,7 +552,7 @@ def main():
     before = {n: p.signature.instructions for n, p in program.named_predictors()}
 
     # Data
-    trainset, valset = langextract_dummy()
+    trainset, valset = langextract_dummy(locale="en")
     logger.info("Dataset — train: {}, val: {}", len(trainset), len(valset))
 
     # LMs
