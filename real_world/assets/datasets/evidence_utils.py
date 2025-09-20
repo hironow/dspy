@@ -80,6 +80,11 @@ def build_conversation_index(item: dict) -> Dict[str, List[dict]]:
     return index
 
 
+def build_all_conversation_indices(dataset: List[dict]) -> List[Dict[str, List[dict]]]:
+    """Build conversation indices for all items in the dataset."""
+    return [build_conversation_index(item) for item in dataset]
+
+
 def resolve_evidence(
     qa_entry: dict,
     index: Dict[str, List[dict]],
@@ -87,28 +92,49 @@ def resolve_evidence(
     """
     Return list of {"ref": "D#:line", "ok": bool, "speaker": str|None, "text": str|None, "dia_id": str|None, "error": str|None}
     in the same order as refs appear.
+
+    - Detects invalid evidence tokens (e.g., wrong format) and reports them as errors.
+    - Supports semicolon-separated tokens inside each evidence string.
     """
     evidence = qa_entry.get("evidence") or []
-    refs = parse_all_evidence(evidence)
     out: List[dict] = []
-    for ref in refs:
-        entry: dict = {"ref": f"{ref.doc}:{ref.line}", "ok": False, "speaker": None, "text": None, "dia_id": None, "error": None}
-        msgs = index.get(ref.doc)
-        if msgs is None:
-            entry["error"] = f"doc {ref.doc} not found"
-            out.append(entry)
+    for item in evidence:
+        if not isinstance(item, str):
+            # Non-string evidence entry
+            out.append({
+                "ref": str(item), "ok": False, "speaker": None, "text": None, "dia_id": None,
+                "error": "invalid ref type (must be str)",
+            })
             continue
-        idx = ref.line - 1  # 1-based -> 0-based
-        if not (0 <= idx < len(msgs)):
-            entry["error"] = f"line {ref.line} out of range for {ref.doc} (len={len(msgs)})"
-            out.append(entry)
+        parts = [p.strip() for p in item.split(";") if p.strip()]
+        if not parts:
+            # Empty string or only delimiters -> ignore silently
             continue
-        msg = msgs[idx]
-        entry["ok"] = True
-        entry["speaker"] = msg.get("speaker")
-        entry["text"] = msg.get("text")
-        entry["dia_id"] = msg.get("dia_id")
-        out.append(entry)
+        for p in parts:
+            ref = EvidenceRef.parse(p)
+            if not ref:
+                out.append({
+                    "ref": p, "ok": False, "speaker": None, "text": None, "dia_id": None,
+                    "error": "invalid ref format (expected D#:line)",
+                })
+                continue
+            entry: dict = {"ref": f"{ref.doc}:{ref.line}", "ok": False, "speaker": None, "text": None, "dia_id": None, "error": None}
+            msgs = index.get(ref.doc)
+            if msgs is None:
+                entry["error"] = f"doc {ref.doc} not found"
+                out.append(entry)
+                continue
+            idx = ref.line - 1  # 1-based -> 0-based
+            if not (0 <= idx < len(msgs)):
+                entry["error"] = f"line {ref.line} out of range for {ref.doc} (len={len(msgs)})"
+                out.append(entry)
+                continue
+            msg = msgs[idx]
+            entry["ok"] = True
+            entry["speaker"] = msg.get("speaker")
+            entry["text"] = msg.get("text")
+            entry["dia_id"] = msg.get("dia_id")
+            out.append(entry)
     return out
 
 
@@ -203,11 +229,56 @@ def strict_cross_validate(
         v for k, v in conv.items()
         if isinstance(v, str) and k.startswith("session_") and k.endswith("_date_time")
     ]
-    rag_timestamps = {m.get("timestamp") for m in rag_msgs if m.get("timestamp")}
-    session_timestamps_missing = [ts for ts in session_ts_values if ts not in rag_timestamps]
+
+    def _normalize_timestamp(s: Optional[str]) -> str:
+        # Keep it simple: reuse text normalization and compare case-insensitively
+        return normalize_text((s or "").strip()).lower()
+
+    rag_timestamps = {
+        _normalize_timestamp(m.get("timestamp"))
+        for m in rag_msgs if m.get("timestamp") is not None
+    }
+    session_timestamps_missing = [
+        ts for ts in session_ts_values
+        if _normalize_timestamp(ts) not in rag_timestamps
+    ]
 
     return {
         "missing_refs": missing_refs,
         "session_timestamps_missing": session_timestamps_missing,
         "total_refs": total_refs,
     }
+
+
+def strict_cross_validate_dataset(
+    dataset: List[dict],
+    rag: Dict[str, dict],
+) -> Dict[str, dict]:
+    """
+    Cross-validate all dataset items against RAG by index (item i -> rag[str(i)]).
+    Returns mapping of item index (str) to per-item report as produced by strict_cross_validate.
+    If a RAG entry is missing, the report contains keys:
+      - missing_rag_entry: True
+      - total_refs: computed refs for that item
+    """
+    reports: Dict[str, dict] = {}
+    for i, item in enumerate(dataset):
+        rag_key = str(i)
+        if rag_key not in rag:
+            # Still compute how many refs exist to report context
+            index = build_conversation_index(item)
+            total_refs = 0
+            for qa in item.get("qa", []):
+                # Count all tokens (valid or invalid) via resolve_evidence for consistency
+                total_refs += len(resolve_evidence(qa, index))
+            reports[rag_key] = {
+                "missing_rag_entry": True,
+                "total_refs": total_refs,
+                "missing_refs": [
+                    {"ref": None, "reason": "rag session missing"}
+                ],
+                "session_timestamps_missing": [],
+            }
+            continue
+        reports[rag_key] = strict_cross_validate(item, rag[rag_key])
+    return reports
