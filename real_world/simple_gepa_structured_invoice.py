@@ -24,9 +24,9 @@ from typing import Any
 from loguru import logger
 
 import dspy
-from dspy.adapters.json_adapter import JSONAdapter
 from real_world.helper import openai_gpt_4o_mini_lm, openai_gpt_4o_lm
 from real_world.factory import invoice_dummy
+from real_world.dummy_lm import make_dummy_lm_json, configure_dummy_adapter
 
 
 class InvoiceIE(dspy.Module):
@@ -277,7 +277,6 @@ def main():
 
     if args.dummy:
         logger.info("Configuring DummyLMs (JSONAdapter) for extract/normalize/reflection")
-        from dspy.utils.dummies import DummyLM
         import itertools
 
         # Extract LM: produces structured outputs; second example intentionally non-ISO date and symbol currency
@@ -301,13 +300,13 @@ def main():
             for p in itertools.cycle(phrases):
                 yield {"improved_instruction": p}
 
-        extract_lm = DummyLM(extract_responses(), adapter=JSONAdapter())
-        normalize_lm = DummyLM(normalize_responses(), adapter=JSONAdapter())
-        reflection_lm = DummyLM(reflection_responses(), adapter=JSONAdapter())
+        extract_lm = make_dummy_lm_json(extract_responses())
+        normalize_lm = make_dummy_lm_json(normalize_responses())
+        reflection_lm = make_dummy_lm_json(reflection_responses())
 
         program._extract_lm = extract_lm
         program._normalize_lm = normalize_lm
-        dspy.settings.configure(lm=normalize_lm, adapter=JSONAdapter())
+        configure_dummy_adapter(lm=normalize_lm)
     else:
         logger.info("Configuring real LMs via helper (OpenAI).")
         task_lm = openai_gpt_4o_mini_lm

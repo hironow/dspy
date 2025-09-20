@@ -28,9 +28,9 @@ import json
 from loguru import logger
 
 import dspy
-from dspy.adapters.json_adapter import JSONAdapter
 from real_world.helper import openai_gpt_4o_mini_lm, openai_gpt_4o_lm
 from real_world.factory import task_metric_qa_dummy
+from real_world.dummy_lm import make_dummy_lm_json, configure_dummy_adapter
 
 
 class SimpleQA(dspy.Module):
@@ -180,8 +180,7 @@ def main():
     logger.info("Dataset — train: {}, val: {}", len(trainset), len(valset))
 
     if args.dummy:
-        logger.info("Configuring DummyLM (JSONAdapter) for task + reflection (no external calls)")
-        from dspy.utils.dummies import DummyLM
+        logger.info("Configuring DummyLM (JSON) for task + reflection (no external calls)")
         import itertools
 
         def infinite_rewrite_responses():
@@ -203,12 +202,12 @@ def main():
             for p in itertools.cycle(phrases):
                 yield {"improved_instruction": p}
 
-        rewrite_lm = DummyLM(infinite_rewrite_responses(), adapter=JSONAdapter())
-        predict_lm = DummyLM(infinite_predict_responses(), adapter=JSONAdapter())
+        rewrite_lm = make_dummy_lm_json(infinite_rewrite_responses())
+        predict_lm = make_dummy_lm_json(infinite_predict_responses())
         program._rewrite_lm = rewrite_lm
         program._predict_lm = predict_lm
-        dspy.settings.configure(lm=predict_lm, adapter=JSONAdapter())
-        reflection_lm = DummyLM(infinite_reflection_responses(), adapter=JSONAdapter())
+        configure_dummy_adapter(lm=predict_lm)
+        reflection_lm = make_dummy_lm_json(infinite_reflection_responses())
     else:
         logger.info("Configuring real LMs via helper (OpenAI).")
         task_lm = openai_gpt_4o_mini_lm

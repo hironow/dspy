@@ -26,9 +26,9 @@ from typing import Any
 from loguru import logger
 
 import dspy
-from dspy.adapters.json_adapter import JSONAdapter
 from real_world.helper import openai_gpt_4o_mini_lm, openai_gpt_4o_lm
 from real_world.factory import routed_sources_dummy
+from real_world.dummy_lm import make_dummy_lm_json, configure_dummy_adapter
 
 
 class RoutedSources(dspy.Module):
@@ -270,7 +270,6 @@ def main():
 
     if args.dummy:
         logger.info("Configuring DummyLMs (JSONAdapter) for router/sources/reranker")
-        from dspy.utils.dummies import DummyLM
         import itertools
 
         # Router LM cycles: db -> rag -> graph
@@ -308,11 +307,11 @@ def main():
                 yield {"text": "Policy updated in 2023"}  # choose RAG
                 yield {"text": "NodeA connected to NodeB via edge X"}  # choose Graph
 
-        route_lm = DummyLM(route_responses(), adapter=JSONAdapter())
-        db_lm = DummyLM(db_responses(), adapter=JSONAdapter())
-        rag_lm = DummyLM(rag_responses(), adapter=JSONAdapter())
-        graph_lm = DummyLM(graph_responses(), adapter=JSONAdapter())
-        rerank_lm = DummyLM(rerank_responses(), adapter=JSONAdapter())
+        route_lm = make_dummy_lm_json(route_responses())
+        db_lm = make_dummy_lm_json(db_responses())
+        rag_lm = make_dummy_lm_json(rag_responses())
+        graph_lm = make_dummy_lm_json(graph_responses())
+        rerank_lm = make_dummy_lm_json(rerank_responses())
 
         # Attach per-predictor LMs
         program._route_lm = route_lm
@@ -324,7 +323,7 @@ def main():
         reflection_lm = rerank_lm
 
         # Global defaults (light by default, can override with context)
-        dspy.settings.configure(lm=rag_lm, adapter=JSONAdapter(), rerank_policy="light")
+        configure_dummy_adapter(lm=rag_lm, rerank_policy="light")
     else:
         logger.info("Configuring real LMs via helper (OpenAI).")
         task_lm = openai_gpt_4o_mini_lm

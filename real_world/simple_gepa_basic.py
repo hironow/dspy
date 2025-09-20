@@ -31,9 +31,9 @@ import time
 import json
 from loguru import logger
 import dspy
-from dspy.adapters.json_adapter import JSONAdapter
 from real_world.helper import openai_gpt_4o_mini_lm, openai_gpt_4o_lm
 from real_world.factory import basic_qa_dummy
+from real_world.dummy_lm import make_dummy_lm_json, configure_dummy_adapter
 
 
 class SimpleQA(dspy.Module):
@@ -133,7 +133,6 @@ def main():
     #
     if args.dummy:
         logger.info("Configuring DummyLM for both task and reflection (no external calls).")
-        from dspy.utils.dummies import DummyLM
         import itertools
 
         # Separate generators per predictor to ensure outputs always match
@@ -158,17 +157,16 @@ def main():
                 yield {"improved_instruction": p}
 
         # Dedicated LMs per-predictor so outputs always match expected fields
-        rewrite_lm = DummyLM(infinite_rewrite_responses(), adapter=JSONAdapter())
-        predict_lm = DummyLM(infinite_predict_responses(), adapter=JSONAdapter())
+        rewrite_lm = make_dummy_lm_json(infinite_rewrite_responses())
+        predict_lm = make_dummy_lm_json(infinite_predict_responses())
         # Attach to program so forward() can use them with dspy.context
         program._rewrite_lm = rewrite_lm
         program._predict_lm = predict_lm
-        # Configure default LM and adapter (JSONAdapter) to match DummyLM outputs
+        # Configure default LM and JSON adapter to match DummyLM outputs
         # Note: predictors use per-predictor contexts above, but adapter must match parsing format.
-        dspy.settings.configure(lm=predict_lm, adapter=JSONAdapter())
-        logger.debug("Dummy per-predictor LMs configured with JSONAdapter (infinite seq). Global adapter set to JSONAdapter.")
-
-        reflection_lm = DummyLM(infinite_reflection_responses(), adapter=JSONAdapter())
+        configure_dummy_adapter(lm=predict_lm)
+        logger.debug("Dummy per-predictor LMs configured with JSON adapter (infinite seq). Global adapter set.")
+        reflection_lm = make_dummy_lm_json(infinite_reflection_responses())
     else:
         logger.info("Configuring real LMs via helper (OpenAI).")
         # Task LM (default for program)
