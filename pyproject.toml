@@ -183,6 +183,7 @@ dev = [
     "pytest-mock>=3.14.1",
     "dspy",
     "gepa>=0.0.12",
+    "ruff>=0.12.0",
 ]
 
 [tool.ruff.lint.isort]
