@@ -117,3 +117,97 @@ def iter_qa_with_resolution(item: dict) -> Iterator[Tuple[dict, List[dict]]]:
     for qa in item.get("qa", []):
         yield qa, resolve_evidence(qa, index)
 
+
+# --- Strict cross-validation against RAG conversation ---
+
+_QUOTE_MAP = {
+    "“": '"',
+    "”": '"',
+    "‘": "'",
+    "’": "'",
+    "—": "-",
+    "–": "-",
+    "…": "...",
+    "\u00a0": " ",  # non-breaking space
+}
+
+
+def normalize_text(s: Optional[str]) -> str:
+    if not s:
+        return ""
+    out = s
+    for k, v in _QUOTE_MAP.items():
+        out = out.replace(k, v)
+    # Collapse whitespace
+    out = " ".join(out.split())
+    return out
+
+
+def build_rag_conversation_map(rag_session: dict) -> Tuple[set, List[dict]]:
+    """
+    Build a set of (speaker, normalized_text) pairs from RAG conversation.
+    Return (pair_set, messages_list) where messages_list is the original list.
+    """
+    msgs = rag_session.get("conversation") or []
+    pair_set = set()
+    for m in msgs:
+        sp = (m.get("speaker") or "").strip()
+        tx = normalize_text(m.get("text"))
+        pair_set.add((sp, tx))
+    return pair_set, msgs
+
+
+def strict_cross_validate(
+    item: dict,
+    rag_session: dict,
+) -> dict:
+    """
+    Cross-validate that every resolved evidence line exists in locomo10_rag conversation.
+
+    Returns a report dict with keys:
+      - missing_refs: list of {ref, speaker, text} pairs not found in RAG
+      - session_timestamps_missing: list of session_*_date_time strings not present in RAG timestamps
+      - total_refs: int total refs checked
+    """
+    index = build_conversation_index(item)
+    pair_set, rag_msgs = build_rag_conversation_map(rag_session)
+
+    missing_refs: List[dict] = []
+    total_refs = 0
+    for qa in item.get("qa", []):
+        res = resolve_evidence(qa, index)
+        for r in res:
+            total_refs += 1
+            if not r.get("ok"):
+                # Already invalid vs locomo10; count as missing in strict mode as well.
+                missing_refs.append({
+                    "ref": r.get("ref"),
+                    "speaker": r.get("speaker"),
+                    "text": r.get("text"),
+                    "reason": r.get("error") or "unresolved in base",
+                })
+                continue
+            sp = (r.get("speaker") or "").strip()
+            tx_norm = normalize_text(r.get("text"))
+            if (sp, tx_norm) not in pair_set:
+                missing_refs.append({
+                    "ref": r.get("ref"),
+                    "speaker": sp,
+                    "text": r.get("text"),
+                    "reason": "not found in RAG conversation",
+                })
+
+    # Check that each session_*_date_time appears somewhere in RAG timestamps
+    conv = item.get("conversation") or {}
+    session_ts_values: List[str] = [
+        v for k, v in conv.items()
+        if isinstance(v, str) and k.startswith("session_") and k.endswith("_date_time")
+    ]
+    rag_timestamps = {m.get("timestamp") for m in rag_msgs if m.get("timestamp")}
+    session_timestamps_missing = [ts for ts in session_ts_values if ts not in rag_timestamps]
+
+    return {
+        "missing_refs": missing_refs,
+        "session_timestamps_missing": session_timestamps_missing,
+        "total_refs": total_refs,
+    }

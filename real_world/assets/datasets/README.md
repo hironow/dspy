@@ -142,6 +142,8 @@ def parse_evidence_tag(tag: str):
 
 - `real_world/assets/datasets/validate_evidence.py`
   - 簡易検証 CLI。先頭の QA から指定件数だけ `evidence` を解決して表示。
+  - `--strict` を付けると `locomo10_rag.json` とのクロス検証も実施（`--rag`, `--rag-id` 指定可）。
+  - `--strict-ts {required|warn|off}` でタイムスタンプ照合の厳密度を選択（既定: off）。
 
 実行例（リポジトリルートで）:
 
@@ -149,6 +151,10 @@ def parse_evidence_tag(tag: str):
 python -m real_world.assets.datasets.validate_evidence --limit 10
 # すべて検証したい場合
 python -m real_world.assets.datasets.validate_evidence --limit 0
+# RAG とも突合（strict モード）
+python -m real_world.assets.datasets.validate_evidence --strict --limit 0
+# QA 用にタイムスタンプ照合を無効化して strict
+python -m real_world.assets.datasets.validate_evidence --strict --strict-ts off --limit 0
 ```
 
 プログラムからの利用例:
