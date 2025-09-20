@@ -202,6 +202,10 @@ def main():
     setup_logging(args.log_level)
     logger.info("Starting LoCoMo Vector RAG + GEPA demo")
 
+    # TODO(Perf/LargeFiles): 巨大ファイル部分読み込み
+    # - 現在は load_locomo10 で JSON 全体を読み込む。
+    # - 代替案: ijson 等のストリーミングで `--item-index` の該当要素のみを抽出する
+    #   `load_locomo10_item(path, item_index)` のようなヘルパーを evidence_utils.py 側に実装して差し替える。
     data = load_locomo10(args.locomo)
     assert data and 0 <= args.item_index < len(data), (
         f"Invalid item-index {args.item_index} for {args.locomo} (len={len(data)})"
@@ -220,6 +224,14 @@ def main():
     adapter.upsert(docs)
 
     # Build QA examples
+    # TODO(RetrievalFilter/Evidence): エビデンスで検索空間を絞る
+    # - InMemoryTfIdfAdapter.query は meta に対する単純な等価フィルターをサポートしている。
+    # - QA の evidence から doc_id（例: "D1"）を抽出し、adapter.query(..., filter={'doc': 'D1'})
+    #   のようにセッション単位で候補を限定する実装を追加する。
+    # - 実装指針:
+    #   1) _locomo_item_to_qa_examples で Example に `evidence_docs` 等の補助フィールドを持たせる
+    #   2) VectorRAG.forward で pred_trace/inputs から当該フィールドを参照し filter を渡す
+    #   3) 複数 doc の場合は filter を拡張するか doc ごとに query して結合する
     all_examples = _locomo_item_to_qa_examples(item)
     if not all_examples:
         logger.warning("No QA examples found in the selected item.")
