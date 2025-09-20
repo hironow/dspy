@@ -50,6 +50,15 @@
 - Metric: 最終テキストの包含一致 + pred_name別FB（route/rerank/source）
 - データ: `factory.routed_sources_dummy(locale="ja")`
 
+### simple_gepa_multimodal_caption.py
+- 概要: 画像→説明（caption, keywords）。見ていない人に伝わる要点重視の説明を最適化。
+- Metric: gold.keywords に対するカバレッジ（caption + pred.keywords）＋簡潔さの軽いペナルティ
+- GEPA: MultiModalInstructionProposer を使い、画像を含む反射データから指示文（captionの方針）を最適化
+- 注記: このスクリプトは reflection_lm と instruction_proposer の両方を同時に利用する最初の simple 例です
+  - GEPA の要件（reflection_lm もしくは instruction_proposer のいずれか必須）に対し、本例は両方を指定
+  - reflection_lm にはマルチモーダル対応モデル（例: gpt‑4o）、instruction_proposer には MultiModalInstructionProposer を使用
+- データ: `factory.image_caption_dummy(locale="ja")`（dspy.Image をURLで供給）
+
 ---
 
 ## Logs の見方（よく出るメッセージ）

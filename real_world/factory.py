@@ -303,4 +303,38 @@ __all__ = [
     "routed_sources_from_records",
     "routed_sources_from_csv",
     "routed_sources_from_jsonl",
+    # image captioning
+    "image_caption_dummy",
 ]
+
+
+# -------------------------------
+# 4) Multimodal image captioning
+# -------------------------------
+
+def image_caption_dummy(locale: str = "ja") -> tuple[list[dspy.Example], list[dspy.Example]]:
+    """Tiny multimodal caption dataset (image -> caption/keywords).
+
+    We provide images as dspy.Image with URLs (no download required here). Gold has
+    keywords to evaluate simple coverage.
+    """
+    # Simple placeholder images (public picsum endpoints)
+    img1 = dspy.Image(url="https://picsum.photos/id/237/300/200")  # dog
+    img2 = dspy.Image(url="https://picsum.photos/id/1025/300/200")  # nature
+    img3 = dspy.Image(url="https://picsum.photos/id/1062/300/200")  # car/street-ish
+
+    if locale == "ja":
+        train = [
+            dspy.Example(image=img1, keywords=["犬", "屋外", "茶色"]).with_inputs("image"),
+            dspy.Example(image=img2, keywords=["山", "空", "緑"]).with_inputs("image"),
+            dspy.Example(image=img3, keywords=["車", "道路", "赤"]).with_inputs("image"),
+        ]
+    else:
+        train = [
+            dspy.Example(image=img1, keywords=["dog", "outdoor", "brown"]).with_inputs("image"),
+            dspy.Example(image=img2, keywords=["mountain", "sky", "green"]).with_inputs("image"),
+            dspy.Example(image=img3, keywords=["car", "road", "red"]).with_inputs("image"),
+        ]
+
+    # keep val = train for the demo simplicity
+    return train, train

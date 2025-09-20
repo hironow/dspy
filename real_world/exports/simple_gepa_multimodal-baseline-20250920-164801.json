@@ -1,0 +1,32 @@
+{
+  "caption": {
+    "traces": [],
+    "train": [],
+    "demos": [],
+    "signature": {
+      "instructions": "画像を見ていない人に伝えるため、主体→属性（色・形）→行為・状態→背景の順で、1〜2文の簡潔な説明とキーワードを出力してください。",
+      "fields": [
+        {
+          "prefix": "Image:",
+          "description": "${image}"
+        },
+        {
+          "prefix": "Caption:",
+          "description": "${caption}"
+        },
+        {
+          "prefix": "Keywords:",
+          "description": "${keywords}"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "metadata": {
+    "dependency_versions": {
+      "python": "3.12",
+      "dspy": "3.0.3",
+      "cloudpickle": "3.1"
+    }
+  }
+}
