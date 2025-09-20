@@ -87,7 +87,7 @@ class InMemoryTfIdfAdapter:
             if df == 0:
                 continue
             idf = math.log((self._N + 1) / (df + 1)) + 1.0  # smoothed idf
-            vec[term] = (f * idf)
+            vec[term] = f * idf
         return vec
 
     @staticmethod
@@ -140,7 +140,4 @@ class PineconeAdapter:  # Example stub for a real adapter
     """
 
     def __init__(self, **kwargs):
-        raise NotImplementedError(
-            "PineconeAdapter is a stub. Implement using your environment's SDK and drop it in."
-        )
-
+        raise NotImplementedError("PineconeAdapter is a stub. Implement using your environment's SDK and drop it in.")

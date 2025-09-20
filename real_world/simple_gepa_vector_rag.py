@@ -31,18 +31,18 @@ GEPA compile requirements:
 from __future__ import annotations
 
 import argparse
-from typing import Any
 
 from loguru import logger
 
 import dspy
+from real_world import data_tools as DT
 from real_world.cli import add_standard_args, setup_logging
 from real_world.cost import log_baseline_estimate, log_gepa_estimate, log_recorded_gepa_cost
 from real_world.dummy_lm import configure_dummy_adapter, make_dummy_lm_json
+from real_world.save import save_artifacts
 from real_world.utils import summarize_before_after, summarize_gepa_results
-from real_world.wandb import get_wandb_args, make_run_name
 from real_world.vector_adapter import Document, InMemoryTfIdfAdapter, VectorAdapter
-from real_world import data_tools as DT
+from real_world.wandb import get_wandb_args, make_run_name
 
 
 class VectorRAG(dspy.Module):
@@ -54,11 +54,20 @@ class VectorRAG(dspy.Module):
         self.top_k = top_k
 
     def forward(self, question: str):
-        rw = self.rewrite(question=question)
+        rw_lm = getattr(self, "_rewrite_lm", None)
+        if rw_lm is not None:
+            with dspy.context(lm=rw_lm):
+                rw = self.rewrite(question=question)
+        else:
+            rw = self.rewrite(question=question)
         rq = getattr(rw, "rewritten_query", None) or question
         # Executor: query vector DB
         hits = self.adapter.query(rq, k=self.top_k)
         passages = [h.text for h in hits] or [""]
+        ans_lm = getattr(self, "_answer_lm", None)
+        if ans_lm is not None:
+            with dspy.context(lm=ans_lm):
+                return self.answer(question=question, passages=passages)
         return self.answer(question=question, passages=passages)
 
 
@@ -195,7 +204,8 @@ def main():
         program._rewrite_lm = rw_lm
         program._answer_lm = ans_lm
         configure_dummy_adapter(lm=ans_lm)
-        reflection_lm = make_dummy_lm_json(lambda: iter([{"improved_instruction": "固有名詞を保持しつつ簡潔に。"}]*1000))
+        # Reflection LM must be an iterator of dict outputs, not a function
+        reflection_lm = make_dummy_lm_json(iter([{"improved_instruction": "固有名詞を保持しつつ簡潔に。"}] * 1000))
     else:
         from real_world.helper import openai_gpt_4o_lm, openai_gpt_4o_mini_lm
 
@@ -243,7 +253,16 @@ def main():
     if hasattr(optimized, "detailed_results") and optimized.detailed_results is not None:
         log_recorded_gepa_cost(optimized.detailed_results, num_predictors=len(program.predictors()), logger=logger)
 
+    # Save artifacts (DSPy-standard JSON files)
+    save_artifacts(
+        program,
+        optimized,
+        save_dir=args.save_dir,
+        prefix=args.save_prefix,
+        logger=logger,
+        save_details=True,
+    )
+
 
 if __name__ == "__main__":
     main()
-

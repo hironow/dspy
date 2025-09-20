@@ -1,0 +1,23 @@
+{
+  "candidates": [
+    {
+      "rewrite": "質問の要点（固有名詞/同義語）を補いながら簡潔に再表現してください。",
+      "answer": "与えられたパッセージ(passages)のみを根拠に、短く正確に回答してください。根拠の表現は可能な限り引用してください。"
+    }
+  ],
+  "val_aggregate_scores": [
+    0.4
+  ],
+  "per_val_instance_best_candidates": [
+    [
+      0
+    ],
+    [
+      0
+    ]
+  ],
+  "discovery_eval_counts": [
+    0
+  ],
+  "seed": null
+}
