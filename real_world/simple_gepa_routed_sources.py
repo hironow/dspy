@@ -26,9 +26,9 @@ from typing import Any
 from loguru import logger
 
 import dspy
-from dspy import Example
 from dspy.adapters.json_adapter import JSONAdapter
 from real_world.helper import openai_gpt_4o_mini_lm, openai_gpt_4o_lm
+from real_world.factory import routed_sources_dummy
 
 
 class RoutedSources(dspy.Module):
@@ -230,26 +230,7 @@ def routed_metric_with_feedback(
     return dspy.Prediction(score=base, feedback=feedback)
 
 
-def build_data():
-    # Three toy tasks with a preferred source hint
-    train = [
-        Example(
-            query="What is the email for user id 42?",
-            answer="user42@example.com",
-            preferred_source="db",
-        ).with_inputs("query"),
-        Example(
-            query="Summarize the latest policy update.",
-            answer="Policy updated in 2023",
-            preferred_source="rag",
-        ).with_inputs("query"),
-        Example(
-            query="Describe the relation between NodeA and NodeB.",
-            answer="NodeA connected to NodeB via edge X",
-            preferred_source="graph",
-        ).with_inputs("query"),
-    ]
-    return train, train
+## dataset is provided by real_world.factory for consistency across demos
 
 
 def main():
@@ -284,7 +265,7 @@ def main():
 
     before = {n: p.signature.instructions for n, p in program.named_predictors()}
 
-    trainset, valset = build_data()
+    trainset, valset = routed_sources_dummy(locale="ja")
     logger.info("Dataset — train: {}, val: {}", len(trainset), len(valset))
 
     if args.dummy:
@@ -310,7 +291,7 @@ def main():
         def rag_responses():
             while True:
                 yield {"text": "N/A"}
-                yield {"text": "Policy updated in 2023"}
+                yield {"text": "ポリシー更新: Policy updated in 2023"}
                 yield {"text": "N/A"}
 
         # Graph source outputs (good for third)
@@ -318,7 +299,7 @@ def main():
             while True:
                 yield {"text": "N/A"}
                 yield {"text": "N/A"}
-                yield {"text": "NodeA connected to NodeB via edge X"}
+                yield {"text": "NodeA と NodeB はエッジXで接続: NodeA connected to NodeB via edge X"}
 
         # Reranker picks the correct candidate for each example
         def rerank_responses():

@@ -24,9 +24,9 @@ from typing import Any
 from loguru import logger
 
 import dspy
-from dspy import Example
 from dspy.adapters.json_adapter import JSONAdapter
 from real_world.helper import openai_gpt_4o_mini_lm, openai_gpt_4o_lm
+from real_world.factory import invoice_dummy
 
 
 class InvoiceIE(dspy.Module):
@@ -246,26 +246,7 @@ def invoice_metric_with_feedback(
     return dspy.Prediction(score=score, feedback=feedback)
 
 
-def build_dataset():
-    # Two minimal examples. The second intentionally uses non-ISO date and symbol currency.
-    train = [
-        Example(
-            text="Invoice: Vendor=Acme Corp; Date=2024-12-31; Amount=1234.56; Currency=USD",
-            vendor="Acme Corp",
-            date="2024-12-31",
-            amount=1234.56,
-            currency="USD",
-        ).with_inputs("text"),
-        Example(
-            text="Invoice: Vendor=Tokyo Shop; Date=31-12-2024; Amount=7890; Currency=¥",
-            vendor="Tokyo Shop",
-            date="2024-12-31",
-            amount=7890.0,
-            currency="JPY",
-        ).with_inputs("text"),
-    ]
-    # Keep val same as train for this demo
-    return train, train
+## dataset is provided by real_world.factory for consistency across demos
 
 
 def main():
@@ -291,7 +272,7 @@ def main():
 
     before = {n: p.signature.instructions for n, p in program.named_predictors()}
 
-    trainset, valset = build_dataset()
+    trainset, valset = invoice_dummy(locale="ja")
     logger.info("Dataset — train: {}, val: {}", len(trainset), len(valset))
 
     if args.dummy:
@@ -313,9 +294,9 @@ def main():
 
         def reflection_responses():
             phrases = [
-                "Ensure ISO date and currency; parse numbers reliably.",
-                "Fix missing fields; adhere strictly to schema keys.",
-                "Normalize symbols to ISO codes; avoid locale-specific dates.",
+                "日付はISO形式(YYYY-MM-DD)、通貨はISOコード（例: JPY）に統一してください。",
+                "欠損フィールドがないようにし、スキーマのキー名を厳密に守ってください。",
+                "通貨記号はISOコードへ、ロケール依存の日付はISO日付へ正規化してください。",
             ]
             for p in itertools.cycle(phrases):
                 yield {"improved_instruction": p}

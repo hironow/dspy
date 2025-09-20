@@ -28,9 +28,9 @@ import json
 from loguru import logger
 
 import dspy
-from dspy import Example
 from dspy.adapters.json_adapter import JSONAdapter
 from real_world.helper import openai_gpt_4o_mini_lm, openai_gpt_4o_lm
+from real_world.factory import task_metric_qa_dummy
 
 
 class SimpleQA(dspy.Module):
@@ -150,16 +150,7 @@ def qa_metric_task_specific(gold: Example, pred: dspy.Prediction, trace=None, pr
     return dspy.Prediction(score=score, feedback=feedback)
 
 
-def build_tiny_dataset():
-    trainset = [
-        Example(question="空の色は何色ですか？", answer="青").with_inputs("question"),
-        Example(question="バナナの色は何色ですか？", answer="黄色").with_inputs("question"),
-    ]
-    valset = [
-        Example(question="晴れた日の海の色は何色ですか？", answer="青").with_inputs("question"),
-        Example(question="熟したバナナの色は何色ですか？", answer="黄色").with_inputs("question"),
-    ]
-    return trainset, valset
+## dataset is provided by real_world.factory for consistency across demos
 
 
 def main():
@@ -185,7 +176,7 @@ def main():
 
     before_instructions = {name: p.signature.instructions for name, p in program.named_predictors()}
 
-    trainset, valset = build_tiny_dataset()
+    trainset, valset = task_metric_qa_dummy(locale="ja")
     logger.info("Dataset — train: {}, val: {}", len(trainset), len(valset))
 
     if args.dummy:

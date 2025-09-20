@@ -31,9 +31,9 @@ import time
 import json
 from loguru import logger
 import dspy
-from dspy import Example
 from dspy.adapters.json_adapter import JSONAdapter
 from real_world.helper import openai_gpt_4o_mini_lm, openai_gpt_4o_lm
+from real_world.factory import basic_qa_dummy
 
 
 class SimpleQA(dspy.Module):
@@ -88,18 +88,7 @@ def qa_metric_with_feedback(gold: Example, pred: dspy.Prediction, trace=None, pr
     return dspy.Prediction(score=correct, feedback=fb)
 
 
-def build_tiny_dataset():
-    """日本語のごく簡単なQAデータセット（数学を避ける）。"""
-    # 小規模でシンプル。必要に応じて拡張してください。
-    trainset = [
-        Example(question="空の色は何色ですか？", answer="青").with_inputs("question"),
-        Example(question="バナナの色は何色ですか？", answer="黄色").with_inputs("question"),
-    ]
-    valset = [
-        Example(question="晴れた日の海の色は何色ですか？", answer="青").with_inputs("question"),
-        Example(question="熟したバナナの色は何色ですか？", answer="黄色").with_inputs("question"),
-    ]
-    return trainset, valset
+## dataset is provided by real_world.factory for consistency across demos
 
 
 def main():
@@ -130,7 +119,7 @@ def main():
     before_instructions = {
         name: pred.signature.instructions for name, pred in program.named_predictors()
     }
-    trainset, valset = build_tiny_dataset()
+    trainset, valset = basic_qa_dummy(locale="ja")
     logger.info("Built tiny dataset — train: {}, val: {}", len(trainset), len(valset))
     logger.debug("Train sample: {}", trainset[0] if trainset else None)
     logger.debug("Val sample: {}", valset[0] if valset else None)
