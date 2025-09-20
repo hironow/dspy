@@ -26,6 +26,7 @@ from loguru import logger
 import dspy
 from dspy import Example
 from dspy.adapters.json_adapter import JSONAdapter
+from real_world.helper import openai_gpt_4o_mini_lm, openai_gpt_4o_lm
 
 
 class InvoiceIE(dspy.Module):
@@ -327,8 +328,10 @@ def main():
         program._normalize_lm = normalize_lm
         dspy.settings.configure(lm=normalize_lm, adapter=JSONAdapter())
     else:
-        logger.warning("Real LM mode not configured in this demo. Use --dummy.")
-        raise RuntimeError("Run with --dummy or configure real LMs.")
+        logger.info("Configuring real LMs via helper (OpenAI).")
+        task_lm = openai_gpt_4o_mini_lm
+        dspy.settings.configure(lm=task_lm)
+        reflection_lm = openai_gpt_4o_lm
 
     from dspy.evaluate import Evaluate
 

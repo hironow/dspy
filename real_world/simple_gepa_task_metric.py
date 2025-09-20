@@ -30,6 +30,7 @@ from loguru import logger
 import dspy
 from dspy import Example
 from dspy.adapters.json_adapter import JSONAdapter
+from real_world.helper import openai_gpt_4o_mini_lm, openai_gpt_4o_lm
 
 
 class SimpleQA(dspy.Module):
@@ -218,8 +219,10 @@ def main():
         dspy.settings.configure(lm=predict_lm, adapter=JSONAdapter())
         reflection_lm = DummyLM(infinite_reflection_responses(), adapter=JSONAdapter())
     else:
-        logger.warning("Real LM mode selected, but configuration is a placeholder in this example.")
-        raise RuntimeError("Run with --dummy or set your real LM configuration.")
+        logger.info("Configuring real LMs via helper (OpenAI).")
+        task_lm = openai_gpt_4o_mini_lm
+        dspy.settings.configure(lm=task_lm)
+        reflection_lm = openai_gpt_4o_lm
 
     # Baseline
     from dspy.evaluate import Evaluate

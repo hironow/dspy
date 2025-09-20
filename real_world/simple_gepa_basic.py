@@ -33,6 +33,7 @@ from loguru import logger
 import dspy
 from dspy import Example
 from dspy.adapters.json_adapter import JSONAdapter
+from real_world.helper import openai_gpt_4o_mini_lm, openai_gpt_4o_lm
 
 
 class SimpleQA(dspy.Module):
@@ -180,14 +181,12 @@ def main():
 
         reflection_lm = DummyLM(infinite_reflection_responses(), adapter=JSONAdapter())
     else:
-        logger.warning("Real LM mode selected, but configuration is a placeholder in this example.")
-        # Placeholder: set your real models here
-        # task_lm = dspy.LM(model="<your-task-model>", temperature=0.0)
-        # reflection_lm = dspy.LM(model="<your-strong-reflection-model>", temperature=0.7)
-        # dspy.settings.configure(lm=task_lm)
-        raise RuntimeError(
-            "Please run with --dummy for a local dry run, or edit LM configuration for a real provider."
-        )
+        logger.info("Configuring real LMs via helper (OpenAI).")
+        # Task LM (default for program)
+        task_lm = openai_gpt_4o_mini_lm
+        dspy.settings.configure(lm=task_lm)
+        # Reflection LM (stronger model recommended)
+        reflection_lm = openai_gpt_4o_lm
 
     # 3) Evaluate baseline
     from dspy.evaluate import Evaluate
