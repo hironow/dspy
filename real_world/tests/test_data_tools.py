@@ -15,11 +15,16 @@ def test_io_and_cleaning_roundtrip(tmp_path):
     Then the rows persist correctly and shapes match expectations
     """
     # Given
-    csv_path = tmp_path / "sample.csv"
-    csv_path.write_text("question,answer\nWhat?,Yes\nWhat?,Yes\n  Why  ,  No  \n", encoding="utf-8")
+    jsonl_path = tmp_path / "sample.jsonl"
+    rows_in = [
+        {"question": "What?", "answer": "Yes"},
+        {"question": "What?", "answer": "Yes"},
+        {"question": "  Why  ", "answer": "  No  "},
+    ]
+    DT.save_jsonl(jsonl_path, rows_in)
 
     # When
-    rows = DT.load_csv(csv_path)
+    rows = DT.load_jsonl(jsonl_path)
     rows = DT.normalize_text(rows, fields=["question", "answer"])  # trim and collapse whitespace
     rows = DT.rename_keys(rows, {"question": "q", "answer": "a"})
     rows = DT.select_keys(rows, ["q", "a"])  # enforce a small schema
@@ -125,4 +130,3 @@ def test_to_examples_compatibility_with_factory(name, make_rows, input_keys, fac
     # Special check: image rows should carry dspy.Image objects unchanged
     if name == "image":
         assert isinstance(de0["image"], dspy.Image)
-
