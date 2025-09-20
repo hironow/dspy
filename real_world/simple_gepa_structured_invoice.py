@@ -15,19 +15,18 @@ from __future__ import annotations
 
 import argparse
 import re
-import sys
-import time
 from typing import Any
 
 from loguru import logger
 
 import dspy
+from real_world.cli import add_standard_args, setup_logging
 from real_world.cost import log_baseline_estimate, log_gepa_estimate, log_recorded_gepa_cost
 from real_world.dummy_lm import configure_dummy_adapter, make_dummy_lm_json
 from real_world.factory import invoice_dummy
 from real_world.helper import openai_gpt_4o_lm, openai_gpt_4o_mini_lm
 from real_world.utils import summarize_before_after, summarize_gepa_results
-from real_world.wandb import get_wandb_args
+from real_world.wandb import get_wandb_args, make_run_name
 
 
 class InvoiceIE(dspy.Module):
@@ -252,14 +251,10 @@ def invoice_metric_with_feedback(
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dummy", action="store_true", help="Use DummyLM for a local dry run")
-    parser.add_argument("--log-level", default="INFO")
-    parser.add_argument("--save-dir", default="real_world/exports")
-    parser.add_argument("--save-prefix", default="simple_gepa_invoice")
+    add_standard_args(parser, default_save_prefix="simple_gepa_invoice")
     args = parser.parse_args()
 
-    logger.remove()
-    logger.add(sys.stderr, level=str(args.log_level).upper())
+    setup_logging(args.log_level)
 
     logger.info("Starting structured invoice GEPA example")
 
@@ -333,11 +328,7 @@ def main():
         reflection_lm=reflection_lm,
         reflection_minibatch_size=1,
         track_stats=True,
-        **get_wandb_args(
-            project="real_world",
-            run_name=f"{args.save_prefix}-{time.strftime('%Y%m%d-%H%M%S')}",
-            enabled=not args.dummy,
-        ),
+        **get_wandb_args(project="real_world", run_name=make_run_name(args.save_prefix), enabled=not args.dummy),
     )
 
     logger.info("Running GEPA compile (max_metric_calls={})...", gepa.max_metric_calls)

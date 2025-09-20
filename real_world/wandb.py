@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 from typing import Any
+import time
 
 
 def get_wandb_args(
@@ -45,3 +46,23 @@ def get_wandb_args(
 
 
 __all__ = ["get_wandb_args"]
+
+
+def make_run_name(prefix: str, *, ts_format: str = "%Y%m%d-%H%M%S", suffix: str | None = None) -> str:
+    """Construct a standardized W&B run name.
+
+    Example: make_run_name("simple_gepa_basic") -> "simple_gepa_basic-20250101-123456"
+
+    Args:
+        prefix: A short identifier for the script or experiment.
+        ts_format: time.strftime format for timestamp portion.
+        suffix: Optional extra text appended after the timestamp.
+
+    Returns:
+        A string suitable for wandb.init(name=...).
+    """
+    stamp = time.strftime(ts_format)
+    base = f"{prefix}-{stamp}"
+    return f"{base}-{suffix}" if suffix else base
+
+__all__.append("make_run_name")

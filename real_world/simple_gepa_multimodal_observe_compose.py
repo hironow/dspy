@@ -13,8 +13,6 @@ Multimodal captioning (Observation -> Composition) with GEPA (v3+)
 from __future__ import annotations
 
 import argparse
-import sys
-import time
 
 from loguru import logger
 
@@ -22,13 +20,14 @@ import dspy
 from dspy.adapters.types import Image as DspyImage
 from dspy.teleprompt.bootstrap_trace import FailedPrediction
 from dspy.teleprompt.gepa.instruction_proposal import MultiModalInstructionProposer
+from real_world.cli import add_standard_args, setup_logging
 from real_world.cost import log_baseline_estimate, log_gepa_estimate, log_recorded_gepa_cost
 from real_world.dummy_lm import configure_dummy_adapter, make_dummy_lm_json
 from real_world.factory import image_caption_dummy
 from real_world.helper import openai_gpt_4o_lm, openai_gpt_4o_mini_lm
 from real_world.save import save_artifacts
 from real_world.utils import summarize_before_after, summarize_gepa_results
-from real_world.wandb import get_wandb_args
+from real_world.wandb import get_wandb_args, make_run_name
 
 
 # Signatures: using typed fields improves clarity and parsing stability
@@ -230,14 +229,10 @@ def caption_metric(
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dummy", action="store_true", help="Use DummyLM (no external calls)")
-    parser.add_argument("--log-level", default="INFO")
-    parser.add_argument("--save-dir", default="real_world/exports")
-    parser.add_argument("--save-prefix", default="simple_gepa_multimodal_oc")
+    add_standard_args(parser, default_save_prefix="simple_gepa_multimodal_oc")
     args = parser.parse_args()
 
-    logger.remove()
-    logger.add(sys.stderr, level=str(args.log_level).upper())
+    setup_logging(args.log_level)
 
     logger.info("Starting multimodal Obs→Compose GEPA example")
 
@@ -330,11 +325,7 @@ def main():
         # 解析失敗（パースエラー）を反射データに含め、スキーマ遵守を学習材料にする
         add_format_failure_as_feedback=True,
         track_stats=True,
-        **get_wandb_args(
-            project="real_world",
-            run_name=f"{args.save_prefix}-{time.strftime('%Y%m%d-%H%M%S')}",
-            enabled=not args.dummy,
-        ),
+        **get_wandb_args(project="real_world", run_name=make_run_name(args.save_prefix), enabled=not args.dummy),
     )
 
     # NOTE: component_selector の選択について

@@ -358,6 +358,7 @@ def image_caption_dummy(locale: str = "ja") -> tuple[list[dspy.Example], list[ds
 # 5) LangExtract (text -> extractions)
 # -------------------------------
 
+
 def langextract_dummy() -> tuple[list[dspy.Example], list[dspy.Example]]:
     """Tiny dummy dataset for langextract-style extraction.
 
@@ -381,10 +382,7 @@ def langextract_dummy() -> tuple[list[dspy.Example], list[dspy.Example]]:
             ],
         ),
         dict(
-            text=(
-                "ROMEO. But soft! What light through yonder window breaks? "
-                "It is the east, and Juliet is the sun."
-            ),
+            text=("ROMEO. But soft! What light through yonder window breaks? It is the east, and Juliet is the sun."),
             targets=[
                 {"extraction_class": "character", "extraction_text": "ROMEO"},
                 {"extraction_class": "emotion", "extraction_text": "But soft!"},
