@@ -52,7 +52,11 @@ def caption_metric(
     gold.keywords: list[str] expected key ideas
     pred: caption: str, keywords: list[str]
     score = coverage ∈ [0,1], penalize overly long caption slightly
-    Returns float for Evaluate, dspy.Prediction(score, feedback) for GEPA
+
+    Modes:
+    - Evaluate mode (called without `pred_name/pred_trace`): return a scalar in [0,1].
+    - GEPA mode (called with `pred_name/pred_trace`): return `dspy.Prediction(score, feedback)` and optionally
+      use `pred_name`/`pred_trace` to provide short, actionable guidance for the predictor.
     """
     gold_k = _normalize_words(list(getattr(gold, "keywords", []) or []))
     pred_caption = str(getattr(pred, "caption", ""))

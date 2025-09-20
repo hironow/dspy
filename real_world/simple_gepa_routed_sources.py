@@ -130,8 +130,10 @@ def routed_metric_with_feedback(
     - Correctness: final text should match gold.answer (substring OK for this demo)
     - Preferred source: gold.preferred_source is a hint. Router/reranker feedback uses it.
     - Uses trace/pred_name/pred_trace to tailor actionable feedback for each predictor.
-
-    Returns float (Evaluate) or dspy.Prediction(score, feedback) for GEPA.
+    Modes:
+    - Evaluate mode (called without `pred_name/pred_trace`): return a scalar (float/bool/int).
+    - GEPA mode (called with `pred_name/pred_trace`): return `dspy.Prediction(score, feedback)` and use
+      `pred_name`/`pred_trace` to provide router/source/reranker-specific feedback.
     """
     gold_answer = str(getattr(gold, "answer", "")).strip()
     preferred = str(getattr(gold, "preferred_source", "")).strip()  # db|rag|graph (hint)

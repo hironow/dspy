@@ -72,6 +72,11 @@ def qa_metric_with_feedback(
     - gold.answer vs pred.answer exact match (case-insensitive)
     - Provide simple, useful textual feedback
     - pred_name/pred_trace are provided by GEPA for predictor-level reflection (not required to use)
+
+    Modes:
+    - Evaluate mode (called without `pred_name/pred_trace`): return a scalar (float/bool/int).
+    - GEPA mode (called with `pred_name/pred_trace`): return `dspy.Prediction(score, feedback)` and optionally
+      use `pred_name`/`pred_trace` to provide targeted feedback for the specific predictor.
     """
     gold_ans = str(getattr(gold, "answer", "")).strip().lower()
     pred_ans = str(getattr(pred, "answer", "")).strip().lower()

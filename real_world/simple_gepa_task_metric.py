@@ -78,7 +78,11 @@ def qa_metric_task_specific(
     - Correctness: allow tiny synonym set (青/ブルー, 黄色/イエロー...). Near-miss (edit distance<=1) gets partial credit.
     - Brevity: prefer a single short word (<=5 chars). Single but long gets partial credit.
     - Final score: 0.8*correctness + 0.2*brevity. GEPA receives textual feedback explaining both components.
-    Returns float for Evaluate; returns dspy.Prediction(score, feedback) for GEPA.
+
+    Modes:
+    - Evaluate mode (called without `pred_name/pred_trace`): return a scalar in [0,1].
+    - GEPA mode (called with `pred_name/pred_trace`): return `dspy.Prediction(score, feedback)`; you may use
+      `pred_name`/`pred_trace` to tailor guidance for `rewrite` or `predict` if desired.
     """
     gold_ans_raw = str(getattr(gold, "answer", "")).strip()
     pred_ans_raw = str(getattr(pred, "answer", "")).strip()

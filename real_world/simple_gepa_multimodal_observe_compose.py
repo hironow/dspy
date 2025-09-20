@@ -114,7 +114,15 @@ def _normalize_words(words: list[str]) -> set[str]:
 def caption_metric(
     gold: dspy.Example, pred: dspy.Prediction, trace=None, pred_name: str | None = None, pred_trace=None
 ):
-    """Coverage-based metric with brevity hint and stage-aware feedback."""
+    """
+    Coverage-based metric with brevity hint and stage-aware feedback.
+
+    Modes:
+    - Evaluate mode (called without `pred_name/pred_trace`): return a scalar in [0,1].
+    - GEPA mode (called with `pred_name/pred_trace`): return `dspy.Prediction(score, feedback)` and use
+      `pred_name`/`pred_trace` to provide analyzer/compose-specific guidance (e.g., reflect missing
+      observations in the final caption, JSON/format hints on failures).
+    """
     gold_k = _normalize_words(list(getattr(gold, "keywords", []) or []))
     pred_caption = str(getattr(pred, "caption", ""))
     pred_k = _normalize_words(list(getattr(pred, "keywords", []) or []))
