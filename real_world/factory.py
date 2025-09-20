@@ -316,6 +316,8 @@ __all__ = [
     "routed_sources_from_jsonl",
     # image captioning
     "image_caption_dummy",
+    # langextract
+    "langextract_dummy",
 ]
 
 
@@ -350,3 +352,45 @@ def image_caption_dummy(locale: str = "ja") -> tuple[list[dspy.Example], list[ds
 
     # keep val = train for the demo simplicity
     return train, train
+
+
+# -------------------------------
+# 5) LangExtract (text -> extractions)
+# -------------------------------
+
+def langextract_dummy() -> tuple[list[dspy.Example], list[dspy.Example]]:
+    """Tiny dummy dataset for langextract-style extraction.
+
+    Each example has:
+      - text: input passage
+      - targets: list of expected extractions, as dicts with
+          {"extraction_class", "extraction_text", "attributes"?}
+
+    We return (trainset, valset) with identical contents to keep the demo simple.
+    """
+    samples = [
+        dict(
+            text="Lady Juliet gazed longingly at the stars, her heart aching for Romeo",
+            targets=[
+                {"extraction_class": "character", "extraction_text": "Lady Juliet"},
+                {
+                    "extraction_class": "emotion",
+                    "extraction_text": "gazed longingly at the stars, her heart aching",
+                },
+                {"extraction_class": "relationship", "extraction_text": "her heart aching for Romeo"},
+            ],
+        ),
+        dict(
+            text=(
+                "ROMEO. But soft! What light through yonder window breaks? "
+                "It is the east, and Juliet is the sun."
+            ),
+            targets=[
+                {"extraction_class": "character", "extraction_text": "ROMEO"},
+                {"extraction_class": "emotion", "extraction_text": "But soft!"},
+                {"extraction_class": "relationship", "extraction_text": "Juliet is the sun"},
+            ],
+        ),
+    ]
+    exs = [dspy.Example(text=s["text"], targets=s["targets"]).with_inputs("text") for s in samples]
+    return exs, exs

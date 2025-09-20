@@ -78,15 +78,23 @@ import argparse
 import json
 import re
 import sys
+import time
 from typing import Any
 
 from loguru import logger
 
 import dspy
+from real_world.cost import (
+    log_baseline_estimate,
+    log_gepa_estimate,
+    log_recorded_gepa_cost,
+)
 from real_world.dummy_lm import configure_dummy_adapter, make_dummy_lm_json
 from real_world.helper import openai_gpt_4o_lm, openai_gpt_4o_mini_lm
 from real_world.save import save_artifacts
 from real_world.utils import summarize_before_after, summarize_gepa_results
+from real_world.factory import langextract_dummy
+from real_world.wandb import get_wandb_args
 
 # -------------------------------
 # Signatures
@@ -279,9 +287,7 @@ class LangExtractPipeline(dspy.Module):
                     }
                 )
             if "but soft" in lower or "gazed longingly" in lower:
-                emo_text = (
-                    "But soft!" if "but soft" in lower else "gazed longingly at the stars, her heart aching"
-                )
+                emo_text = "But soft!" if "but soft" in lower else "gazed longingly at the stars, her heart aching"
                 outs.append(
                     {
                         "extraction_class": "emotion",
@@ -338,32 +344,9 @@ class LangExtractPipeline(dspy.Module):
 # -------------------------------
 
 
-def _make_langextract_dummy_dataset() -> tuple[list[dspy.Example], list[dspy.Example]]:
-    """Two small texts with expected extractions, inspired by Shakespeare snippets."""
-    samples = [
-        dict(
-            text="Lady Juliet gazed longingly at the stars, her heart aching for Romeo",
-            targets=[
-                {"extraction_class": "character", "extraction_text": "Lady Juliet"},
-                {
-                    "extraction_class": "emotion",
-                    "extraction_text": "gazed longingly at the stars, her heart aching",
-                },
-                {"extraction_class": "relationship", "extraction_text": "her heart aching for Romeo"},
-            ],
-        ),
-        dict(
-            text=("ROMEO. But soft! What light through yonder window breaks? It is the east, and Juliet is the sun."),
-            targets=[
-                {"extraction_class": "character", "extraction_text": "ROMEO"},
-                {"extraction_class": "emotion", "extraction_text": "But soft!"},
-                {"extraction_class": "relationship", "extraction_text": "Juliet is the sun"},
-            ],
-        ),
-    ]
-    exs = [dspy.Example(text=s["text"], targets=s["targets"]).with_inputs("text") for s in samples]
-    # Use same list for train/val so GEPA can focus on prompt refinement under budget
-    return exs, exs
+"""
+Dataset moved to real_world.factory.langextract_dummy().
+"""
 
 
 # -------------------------------
@@ -559,18 +542,16 @@ def main():
         use_fallback=bool(args.dummy),
     )
     program.build_prompt.signature = program.build_prompt.signature.with_instructions(
-
-            "Produce a concise extraction instruction and a few-shot examples JSON.\n"
-            "- Enforce exact text spans from input and avoid overlap.\n"
-            "- Cover all target classes in examples with attributes.\n"
-            "- Keep the prompt clear and brief."
-
+        "Produce a concise extraction instruction and a few-shot examples JSON.\n"
+        "- Enforce exact text spans from input and avoid overlap.\n"
+        "- Cover all target classes in examples with attributes.\n"
+        "- Keep the prompt clear and brief."
     )
 
     before = {n: p.signature.instructions for n, p in program.named_predictors()}
 
     # Data
-    trainset, valset = _make_langextract_dummy_dataset()
+    trainset, valset = langextract_dummy()
     logger.info("Dataset — train: {}, val: {}", len(trainset), len(valset))
 
     # LMs
@@ -590,6 +571,8 @@ def main():
 
     evaluator = Evaluate(devset=valset, metric=langextract_metric, display_progress=False, num_threads=1)
     logger.info("Baseline evaluation on {} validation examples...", len(valset))
+    # Predictive cost notes
+    log_baseline_estimate(valset_size=len(valset), num_predictors=len(program.predictors()), logger=logger)
     baseline = evaluator(program)
     logger.success("Baseline score: {}", baseline.score)
 
@@ -601,9 +584,22 @@ def main():
         auto=None if args.dummy else "light",
         reflection_minibatch_size=1,
         track_stats=True,
+        **get_wandb_args(
+            project="real_world",
+            run_name=f"{args.save_prefix}-{time.strftime('%Y%m%d-%H%M%S')}",
+            enabled=not args.dummy,
+        ),
     )
 
     logger.info("Running GEPA compile (max_metric_calls={} auto={})...", gepa.max_metric_calls, gepa.auto)
+    # Predictive GEPA cost notes
+    log_gepa_estimate(
+        gepa=gepa,
+        num_predictors=len(program.predictors()),
+        valset_size=len(valset),
+        trainset_size=len(trainset),
+        logger=logger,
+    )
     optimized = gepa.compile(program, trainset=trainset, valset=valset)
     logger.success("GEPA compile finished.")
 
@@ -614,6 +610,8 @@ def main():
 
     summarize_gepa_results(optimized, logger, top_k=10)
     summarize_before_after(before, optimized, logger)
+    if hasattr(optimized, "detailed_results") and optimized.detailed_results is not None:
+        log_recorded_gepa_cost(optimized.detailed_results, num_predictors=len(program.predictors()), logger=logger)
 
     save_artifacts(
         program, optimized, save_dir=args.save_dir, prefix=args.save_prefix, logger=logger, save_details=True

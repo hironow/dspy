@@ -1,0 +1,22 @@
+{
+  "candidates": [
+    {
+      "build_prompt": "Produce a concise extraction instruction and a few-shot examples JSON.\n- Enforce exact text spans from input and avoid overlap.\n- Cover all target classes in examples with attributes.\n- Keep the prompt clear and brief."
+    }
+  ],
+  "val_aggregate_scores": [
+    0.8335
+  ],
+  "per_val_instance_best_candidates": [
+    [
+      0
+    ],
+    [
+      0
+    ]
+  ],
+  "discovery_eval_counts": [
+    0
+  ],
+  "seed": null
+}

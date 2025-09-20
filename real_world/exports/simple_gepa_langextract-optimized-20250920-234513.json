@@ -1,0 +1,40 @@
+{
+  "build_prompt": {
+    "traces": [],
+    "train": [],
+    "demos": [],
+    "signature": {
+      "instructions": "Produce a concise extraction instruction and a few-shot examples JSON.\n- Enforce exact text spans from input and avoid overlap.\n- Cover all target classes in examples with attributes.\n- Keep the prompt clear and brief.",
+      "fields": [
+        {
+          "prefix": "Task:",
+          "description": "Task to perform (e.g., extract characters/emotions/relationships)"
+        },
+        {
+          "prefix": "Target Classes:",
+          "description": "List of extraction classes to detect"
+        },
+        {
+          "prefix": "Style Hints:",
+          "description": "Additional constraints or preferences"
+        },
+        {
+          "prefix": "Prompt Description:",
+          "description": "Instruction for langextract"
+        },
+        {
+          "prefix": "Examples Json:",
+          "description": "JSON array of {text, extractions} examples"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "metadata": {
+    "dependency_versions": {
+      "python": "3.12",
+      "dspy": "3.0.3",
+      "cloudpickle": "3.1"
+    }
+  }
+}
