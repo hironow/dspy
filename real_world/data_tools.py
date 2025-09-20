@@ -429,9 +429,16 @@ def load_image_caption_examples_from_jsonl(path: str | Path) -> list[dspy.Exampl
     rows = load_jsonl(path)
     exs: list[dspy.Example] = []
     for r in rows:
-        img_url = (
-            r.get("image_url") or r.get("image", {}).get("url") if isinstance(r.get("image"), dict) else r.get("image")
-        )
+        img_url = r.get("image_url")
+        if not img_url:
+            image_field = r.get("image")
+            if isinstance(image_field, dict):
+                img_url = image_field.get("url")
+            elif isinstance(image_field, str):
+                img_url = image_field
+        if not img_url or not str(img_url).strip():
+            # Skip malformed rows that don't have a usable URL.
+            continue
         kws = r.get("keywords") or []
         exs.append(dspy.Example(image=dspy.Image(url=img_url), keywords=kws).with_inputs("image"))
     return exs
