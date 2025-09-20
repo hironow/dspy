@@ -78,7 +78,6 @@ import argparse
 import json
 import re
 import sys
-import time
 from typing import Any
 
 from loguru import logger
@@ -88,7 +87,6 @@ from real_world.dummy_lm import configure_dummy_adapter, make_dummy_lm_json
 from real_world.helper import openai_gpt_4o_lm, openai_gpt_4o_mini_lm
 from real_world.save import save_artifacts
 from real_world.utils import summarize_before_after, summarize_gepa_results
-
 
 # -------------------------------
 # Signatures
@@ -161,9 +159,7 @@ class LangExtractPipeline(dspy.Module):
         super().__init__()
         self.build_prompt = dspy.Predict(BuildLangExtractPrompt)
         self.langextract_model_id = langextract_model_id
-        self.default_task = default_task or (
-            "Extract characters, emotions, and relationships from the input text."
-        )
+        self.default_task = default_task or ("Extract characters, emotions, and relationships from the input text.")
         self.default_target_classes = default_target_classes or [
             "character",
             "emotion",
@@ -173,9 +169,7 @@ class LangExtractPipeline(dspy.Module):
             "Use exact spans from the text (no paraphrasing), avoid overlaps, include attributes."
         )
 
-    def _call_langextract(
-        self, *, text: str, prompt_description: str, examples_json: str
-    ) -> list[dict[str, Any]]:
+    def _call_langextract(self, *, text: str, prompt_description: str, examples_json: str) -> list[dict[str, Any]]:
         """Call langextract if available, otherwise use a simple heuristic fallback.
 
         Returns a list of dicts: [{extraction_class, extraction_text, attributes}].
@@ -222,9 +216,7 @@ class LangExtractPipeline(dspy.Module):
                 )
             # Emotion: match a simple cue
             if "but soft" in lower or "gazed longingly" in lower:
-                emo_text = (
-                    "But soft!" if "but soft" in lower else "gazed longingly at the stars, her heart aching"
-                )
+                emo_text = "But soft!" if "but soft" in lower else "gazed longingly at the stars, her heart aching"
                 outs.append(
                     {
                         "extraction_class": "emotion",
@@ -322,10 +314,7 @@ def _make_langextract_dummy_dataset() -> tuple[list[dspy.Example], list[dspy.Exa
             ],
         ),
         dict(
-            text=(
-                "ROMEO. But soft! What light through yonder window breaks? "
-                "It is the east, and Juliet is the sun."
-            ),
+            text=("ROMEO. But soft! What light through yonder window breaks? It is the east, and Juliet is the sun."),
             targets=[
                 {"extraction_class": "character", "extraction_text": "ROMEO"},
                 {"extraction_class": "emotion", "extraction_text": "But soft!"},
@@ -333,9 +322,7 @@ def _make_langextract_dummy_dataset() -> tuple[list[dspy.Example], list[dspy.Exa
             ],
         ),
     ]
-    exs = [
-        dspy.Example(text=s["text"], targets=s["targets"]).with_inputs("text") for s in samples
-    ]
+    exs = [dspy.Example(text=s["text"], targets=s["targets"]).with_inputs("text") for s in samples]
     # Use same list for train/val so GEPA can focus on prompt refinement under budget
     return exs, exs
 
@@ -410,8 +397,10 @@ def langextract_metric(
         g_txt = str(g.get("extraction_text", ""))
         found = any(
             (str(p.get("extraction_class", "")) == g_cls)
-            and (_normalize(g_txt) in _normalize(str(p.get("extraction_text", "")))
-                 or _normalize(str(p.get("extraction_text", ""))) in _normalize(g_txt))
+            and (
+                _normalize(g_txt) in _normalize(str(p.get("extraction_text", "")))
+                or _normalize(str(p.get("extraction_text", ""))) in _normalize(g_txt)
+            )
             for p in pred_extractions
         )
         if not found:
@@ -449,9 +438,7 @@ def langextract_metric(
                             seen.add(str(e.get("extraction_class", "")).lower())
                     missing_in_examples = sorted(list(want - seen))
                     if missing_in_examples:
-                        fb_parts.append(
-                            "Examples: add coverage for classes → " + ", ".join(missing_in_examples)
-                        )
+                        fb_parts.append("Examples: add coverage for classes → " + ", ".join(missing_in_examples))
             except Exception:
                 fb_parts.append("examples_json is not valid JSON; output a JSON array of {text, extractions}.")
         except Exception:
@@ -482,9 +469,21 @@ def _dummy_prompt_responses():
                     {
                         "text": "ROMEO. But soft! ... Juliet is the sun.",
                         "extractions": [
-                            {"extraction_class": "character", "extraction_text": "ROMEO", "attributes": {"emotional_state": "awe"}},
-                            {"extraction_class": "emotion", "extraction_text": "But soft!", "attributes": {"feeling": "gentle awe"}},
-                            {"extraction_class": "relationship", "extraction_text": "Juliet is the sun", "attributes": {"type": "metaphor"}},
+                            {
+                                "extraction_class": "character",
+                                "extraction_text": "ROMEO",
+                                "attributes": {"emotional_state": "awe"},
+                            },
+                            {
+                                "extraction_class": "emotion",
+                                "extraction_text": "But soft!",
+                                "attributes": {"feeling": "gentle awe"},
+                            },
+                            {
+                                "extraction_class": "relationship",
+                                "extraction_text": "Juliet is the sun",
+                                "attributes": {"type": "metaphor"},
+                            },
                         ],
                     }
                 ]
@@ -518,12 +517,12 @@ def main():
     # Program
     program = LangExtractPipeline(langextract_model_id=args.langextract_model_id)
     program.build_prompt.signature = program.build_prompt.signature.with_instructions(
-        (
+
             "Produce a concise extraction instruction and a few-shot examples JSON.\n"
             "- Enforce exact text spans from input and avoid overlap.\n"
             "- Cover all target classes in examples with attributes.\n"
             "- Keep the prompt clear and brief."
-        )
+
     )
 
     before = {n: p.signature.instructions for n, p in program.named_predictors()}
