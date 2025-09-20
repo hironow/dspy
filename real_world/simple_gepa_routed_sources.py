@@ -29,6 +29,7 @@ import dspy
 from real_world.helper import openai_gpt_4o_mini_lm, openai_gpt_4o_lm
 from real_world.factory import routed_sources_dummy
 from real_world.dummy_lm import make_dummy_lm_json, configure_dummy_adapter
+from real_world.utils import summarize_gepa_results, summarize_before_after
 
 
 class RoutedSources(dspy.Module):
@@ -357,6 +358,10 @@ def main():
     with dspy.context(rerank_policy="light"):
         improved = evaluator(optimized)
     logger.success("Post-GEPA score: {}", improved.score)
+
+    summarize_gepa_results(optimized, logger, top_k=10)
+    before_instructions = before
+    summarize_before_after(before_instructions, optimized, logger)
 
     # Save artifacts
     try:
