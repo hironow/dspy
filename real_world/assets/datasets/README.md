@@ -178,3 +178,46 @@ for r in resolved:
     if r["ok"]:
         print(r["ref"], r["speaker"], r["text"])  # D#:line, 話者, 発話
 ```
+
+## データ修正履歴（アノテーション）
+
+最終更新: 2025-09-20（全件検証および strict 突合済み）
+
+- 目的: `locomo10.json` の `evidence` 欄に存在した不正/不整合な参照を修正し、全件で参照解決可能にしました。
+- 検証結果: `validate_evidence` で「All referenced evidence resolved successfully across all items.」を確認。
+  また strict モードで `locomo10_rag.json` とも突合し、「Total refs checked: 2822」「Strict check PASSED」を確認。
+
+修正内容（抜粋・Item/QA は 0 始まりの Item, 1 始まりの表示 QA に準拠）
+
+- Item 3 / QA 59（What things has Nate reccomended to Joanna?）
+  - 誤: `D10:19`（`session_10` に 19行目が存在せず範囲外）
+  - 正: `D20:15`（バター代替の推奨発話に一致）
+
+- Item 3 / QA 89（What is one of Joanna's favorite movies?）
+  - 誤: `evidence: ["D1:18", "D", "D1:20"]`（無効トークン `D` を含む）
+  - 正: `evidence: ["D1:18", "D1:20"]`
+
+- Item 4 / QA 19（What authors has Tim read books from?）
+  - 誤: `D:11:26`（コロン位置不正）
+  - 正: `D11:26`
+
+- Item 6 / QA 39（What happened to John's job situation in 2022?）
+  - 誤: `D4:36`（`session_4` の長さ超過により範囲外）
+  - 正: `D4:36` を削除（他の根拠 `D18:1`, `D18:7` により成立）
+
+- Item 8 / QA 32（How might Evan and Sam's experiences ...?）
+  - 誤: `"D9:1 D4:4 D4:6"`（スペース連結）
+  - 正: `"D9:1", "D4:4", "D4:6"`（トークン分割）
+
+- Item 8 / QA 39（What role does nature and the outdoors ...?）
+  - 誤: `"D22:1 D22:2 D9:10 D9:11"`
+  - 正: `"D22:1", "D22:2", "D9:10", "D9:11"`
+
+- Item 8 / QA 47（How do Evan and Sam use creative outlets ...?）
+  - 誤: `"D21:18 D21:22 D11:15 D11:19"`
+  - 正: `"D21:18", "D21:22", "D11:15", "D11:19"`
+
+補足
+
+- 検証・修正には `validate_evidence` を使用。未解決がある場合は自動生成される `validate_result.txt` に未解決一覧（Item/QA/参照/理由）を出力するよう対応済みです。
+- strict 突合ではテキスト正規化とタイムスタンプの簡易正規化（大文字小文字/空白の正規化）を行い、`rag-id=auto` デフォルトで全アイテムを `locomo10_rag.json` と照合します。

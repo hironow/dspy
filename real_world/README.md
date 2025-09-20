@@ -51,6 +51,7 @@
 - データ: `factory.routed_sources_dummy(locale="ja")`
 
 ### simple_gepa_multimodal_caption.py
+
 - 概要: 画像→説明（caption, keywords）。見ていない人に伝わる要点重視の説明を最適化。
 - Metric: gold.keywords に対するカバレッジ（caption + pred.keywords）＋簡潔さの軽いペナルティ
 - GEPA: MultiModalInstructionProposer を使い、画像を含む反射データから指示文（captionの方針）を最適化
@@ -60,6 +61,7 @@
 - データ: `factory.image_caption_dummy(locale="ja")`（dspy.Image をURLで供給）
 
 ### simple_gepa_multimodal_observe_compose.py
+
 - 概要: 観測→作文の二段構成（analyze: objects/attributes/actions/scene/meta → compose: caption/keywords）。
 - Metric: キーワード被覆＋簡潔さ。GEPA時は pred_name を活かし analyze/compose へ段ごとのFB。
 - GEPA: MultiModalInstructionProposer を使用（画像を構造化のまま反射LMへ）。
