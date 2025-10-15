@@ -29,6 +29,7 @@ from loguru import logger
 
 import dspy
 from real_world.cli import add_standard_args, setup_logging
+from real_world.metrics_utils import confusion_outcomes, safe_trace_log
 from real_world.cost import log_baseline_estimate, log_gepa_estimate, log_recorded_gepa_cost
 from real_world.dummy_lm import configure_dummy_adapter, make_dummy_lm_json
 from real_world.factory import basic_qa_dummy
@@ -82,18 +83,36 @@ def qa_metric_with_feedback(
 
     correct = 1.0 if gold_ans == pred_ans and gold_ans != "" else 0.0
 
-    if correct:
-        fb = "Correct answer."
-    else:
-        fb = f"Expected '{gold_ans}' but got '{pred_ans}'."
-        if pred_name is not None:
-            fb += f" Target predictor: {pred_name}."
+    # Binary framing for reuse in trace and feedback
+    gold_pos = bool(gold_ans)
+    guess_pos = bool(gold_ans) and (pred_ans == gold_ans)
+    pred_claim = bool(pred_ans)
+    conf = confusion_outcomes(gold_pos, guess_pos, pred_claim)
 
-    # Return a plain float for standard evaluation (Evaluate),
-    # and (score, feedback) when GEPA asks for predictor/program feedback.
+    # Lightweight trace log (for GEPA reflection/debug)
+    safe_trace_log(
+        trace,
+        {"gold": gold_ans, "pred": pred_ans, "correct": bool(correct), "confusion": conf},
+    )
+
+    # Return a plain float for standard evaluation (Evaluate)
     if pred_name is None and pred_trace is None:
         return correct
-    return dspy.Prediction(score=correct, feedback=fb)
+
+    # GEPA mode: shape feedback with explicit TP/FN/FP/TN branches
+    if conf["TP"]:
+        feedback = "Correct answer."
+    elif conf["FN"]:
+        feedback = f"Incorrect. Correct answer is '{gold_ans}'. Prefer exact, concise answers."
+    elif conf["FP"]:
+        feedback = "Unnecessary answer when none is expected; avoid hallucination."
+    else:  # TN
+        feedback = "Correct: no answer needed; keep outputs minimal."
+
+    if pred_name is not None:
+        feedback += f" Target predictor: {pred_name}."
+
+    return dspy.Prediction(score=correct, feedback=feedback)
 
 
 ## dataset is provided by real_world.factory for consistency across demos

@@ -27,6 +27,7 @@ from loguru import logger
 
 import dspy
 from real_world.cli import add_standard_args, setup_logging
+from real_world.metrics_utils import confusion_outcomes, safe_trace_log
 from real_world.cost import log_baseline_estimate, log_gepa_estimate, log_recorded_gepa_cost
 from real_world.dummy_lm import configure_dummy_adapter, make_dummy_lm_json
 from real_world.factory import invoice_dummy
@@ -161,6 +162,34 @@ def invoice_metric_with_feedback(
 
     score = max(0.0, min(1.0, round(score, 3)))
 
+    # Binary framing reused for trace and feedback
+    vendor_ok = bool(pred_vendor) and (not gold_vendor or pred_vendor.lower() == gold_vendor.lower())
+    date_ok = bool(pred_date) and _is_iso_date(pred_date) and (not gold_date or pred_date == gold_date)
+    amount_ok = (pred_amount is not None) and (gold_amount is None or abs(pred_amount - gold_amount) <= 0.01)
+    currency_ok = bool(pred_currency) and (pred_currency in ISO_CURRENCIES) and (
+        not gold_currency or pred_currency == gold_currency
+    )
+    gold_pos = any([bool(gold_vendor), bool(gold_date), gold_amount is not None, bool(gold_currency)])
+    guess_pos = vendor_ok and date_ok and amount_ok and currency_ok
+    pred_claim = bool(pred_vendor or pred_date or (pred_amount is not None) or pred_currency)
+    conf = confusion_outcomes(gold_pos, guess_pos, pred_claim)
+
+    # Trace essentials for reflection/debug
+    safe_trace_log(
+        trace,
+        {
+            "errors": len(errors),
+            "score": score,
+            "fields": {
+                "vendor": bool(pred_vendor),
+                "date": bool(pred_date),
+                "amount_numeric": pred_amount is not None,
+                "currency_iso": pred_currency in ISO_CURRENCIES,
+            },
+            "confusion": conf,
+        },
+    )
+
     # Evaluate mode: return scalar only
     if pred_name is None and pred_trace is None:
         return score
@@ -168,11 +197,19 @@ def invoice_metric_with_feedback(
     # GEPA mode: build tailored feedback using pred_name/pred_trace
     fb: list[str] = []
 
+    # TP/FN/FP/TN framing (all-fields-valid = TP)
+    if conf["TP"]:
+        fb.append("All fields are valid against the schema.")
+    elif conf["FN"]:
+        fb.append("Some fields are missing or invalid; fix schema violations.")
+    elif conf["FP"]:
+        fb.append("Unnecessary extraction when no gold fields are present; avoid hallucinated fields.")
+    else:  # TN
+        fb.append("Correct: no fields required.")
+
     # Summarize failures
     if errors:
         fb.append("; ".join(errors))
-    else:
-        fb.append("All fields valid against schema.")
 
     # Add predictor-specific suggestions
     try:
@@ -220,14 +257,14 @@ def invoice_metric_with_feedback(
         # Date normalization
         if not _is_iso_date(pred_date):
             if gold_date:
-                fb.append(f"Date normalization: '{src_date or pred_date}' -> '{gold_date}' (ISO).")
+                fb.append(f"Date normalization: convert '{src_date or pred_date}' to '{gold_date}' (ISO).")
             elif src_date or pred_date:
-                fb.append(f"Date normalization: '{src_date or pred_date}' -> 'YYYY-MM-DD' (ISO).")
+                fb.append(f"Date normalization: convert '{src_date or pred_date}' to 'YYYY-MM-DD' (ISO).")
 
         # Currency normalization
         if pred_currency not in ISO_CURRENCIES:
             target_cur = gold_currency or "ISO code like 'JPY'"
-            fb.append(f"Currency normalization: '{(src_curr or pred_currency) or ''}' -> '{target_cur}'.")
+            fb.append(f"Currency normalization: convert '{(src_curr or pred_currency) or ''}' to '{target_cur}'.")
 
         # Amount normalization
         if pred_amount is None:
@@ -241,7 +278,7 @@ def invoice_metric_with_feedback(
             if normalized_hint is None and gold_amount is not None:
                 normalized_hint = gold_amount
             if normalized_hint is not None:
-                fb.append(f"Amount normalization: '{_safe_str(src_amt)}' -> {normalized_hint} (numeric).")
+                fb.append(f"Amount normalization: convert '{_safe_str(src_amt)}' to {normalized_hint} (numeric).")
             else:
                 fb.append("Amount normalization: ensure a numeric float (e.g., '7,890' -> 7890.0).")
 

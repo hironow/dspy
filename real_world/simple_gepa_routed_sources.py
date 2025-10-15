@@ -34,6 +34,7 @@ from real_world.factory import routed_sources_dummy
 from real_world.helper import openai_gpt_4o_lm, openai_gpt_4o_mini_lm
 from real_world.utils import summarize_before_after, summarize_gepa_results
 from real_world.wandb import get_wandb_args, make_run_name
+from real_world.metrics_utils import confusion_outcomes, safe_trace_log
 
 
 class RoutedSources(dspy.Module):
@@ -150,12 +151,43 @@ def routed_metric_with_feedback(
     else:
         base = 1.0 if gold_answer.lower() in final_text.lower() else 0.0
 
+    # Trace essentials for reflection/debug
+    # Attempt to find routed source from trace
+    chosen_trace = None
+    try:
+        for p, _inp, out in trace or []:
+            if hasattr(out, "source"):
+                chosen_trace = getattr(out, "source", None)
+                break
+    except Exception:
+        chosen_trace = None
+
+    gold_pos = bool(gold_answer)
+    guess_pos = bool(base == 1.0)
+    pred_claim = bool(final_text)
+    conf = confusion_outcomes(gold_pos, guess_pos, pred_claim)
+
+    safe_trace_log(
+        trace,
+        {"preferred": preferred, "routed": chosen_trace, "correct": bool(base), "confusion": conf},
+    )
+
     # Evaluate mode (no pred_name/pred_trace): return scalar only
     if pred_name is None and pred_trace is None:
         return base
 
     # Build feedback using predictor-level view
     fb: list[str] = []
+
+    # Initial TP/FN/FP/TN framing
+    if conf["TP"]:
+        fb.append("Output matches expected content.")
+    elif conf["FN"]:
+        fb.append(f"Mismatch: expected contains '{gold_answer}', got '{final_text[:50]}'.")
+    elif conf["FP"]:
+        fb.append("Unnecessary text when none is expected; avoid hallucination.")
+    else:
+        fb.append("Correct: no answer needed for this query.")
 
     # Helper to extract routed choice from full trace
     def find_routed_source(full_trace) -> str | None:

@@ -37,6 +37,7 @@ from real_world.helper import openai_gpt_4o_lm, openai_gpt_4o_mini_lm
 from real_world.save import save_artifacts
 from real_world.utils import summarize_before_after, summarize_gepa_results
 from real_world.wandb import get_wandb_args, make_run_name
+from real_world.metrics_utils import confusion_outcomes, safe_trace_log
 
 
 # Signatures: using typed fields improves clarity and parsing stability
@@ -152,6 +153,25 @@ def caption_metric(
 
     score = round(max(0.0, min(1.0, coverage * penalty)), 3)
 
+    # Binary framing reused for trace and feedback
+    gold_pos = bool(gold_k)
+    guess_pos = gold_pos and (coverage == 1.0)
+    pred_claim = bool(pred_caption.strip()) or bool(pred_k)
+    conf = confusion_outcomes(gold_pos, guess_pos, pred_claim)
+
+    # Trace essentials for reflection/debug
+    safe_trace_log(
+        trace,
+        {
+            "coverage": coverage,
+            "caption_len": len(pred_caption),
+            "gold_keywords": len(gold_k),
+            "pred_keywords": len(pred_k),
+            "score": score,
+            "confusion": conf,
+        },
+    )
+
     if pred_name is None and pred_trace is None:
         return score
 
@@ -207,6 +227,16 @@ def caption_metric(
             fb_parts.append("出力の構文/形式に従ってください（指定フィールドのみ、型・構造を厳守）。")
     except Exception:
         pass
+
+    # TP/FN/FP/TN framing for top-level guidance
+    if conf["TP"]:
+        fb_parts.append("主要キーワードを十分に含んでいます。")
+    elif conf["FN"]:
+        fb_parts.append(f"不足キーワード: {missing}")
+    elif conf["FP"]:
+        fb_parts.append("不要な説明やキーワードがあります。必要がない場合は簡潔に。")
+    else:
+        fb_parts.append("無回答が正しいケースです。不要な記述を避けてください。")
 
     if pred_name == "analyze":
         if missing:

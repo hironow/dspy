@@ -143,6 +143,17 @@
 - GEPA: `metric(gold, pred, trace, pred_name, pred_trace) -> float | dspy.Prediction(score, feedback)`
   - Predictor単位のFB（pred_name/pred_trace）で「どこをどう直すか」を具体化
 
+補足:
+- 分類向けの厳格・再現重視（FN抑制）メトリクス例を `real_world/metrics_privacy_risk.py` に追加。
+  - 出力の厳格バリデーション（"High Risk"/"Low Risk"）
+  - 混同行列の簡易トレースログ
+  - GEPA向けに常に `dspy.Prediction(score, feedback)` を返す実装
+- メトリクス実装の共通ユーティリティを `real_world/metrics_utils.py` に追加。全サンプルで利用しています。
+  - `confusion_outcomes(gold_pos, guess_pos, pred_claim)` で TP/FP/TN/FN の算出を統一
+  - `safe_trace_log(trace, data)` でトレース出力を例外安全に記録
+  - Evaluate ではスカラー、GEPA では `dspy.Prediction(score, feedback)` のルールを徹底
+  - フィードバックはテキストのみ（絵文字・記号による意味づけは使用しない）
+
 ---
 
 ## 出力と保存

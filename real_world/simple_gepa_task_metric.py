@@ -32,6 +32,7 @@ from loguru import logger
 
 import dspy
 from real_world.cli import add_standard_args, setup_logging
+from real_world.metrics_utils import confusion_outcomes, safe_trace_log
 from real_world.cost import log_baseline_estimate, log_gepa_estimate, log_recorded_gepa_cost
 from real_world.dummy_lm import configure_dummy_adapter, make_dummy_lm_json
 from real_world.factory import task_metric_qa_dummy
@@ -137,29 +138,56 @@ def qa_metric_task_specific(
 
     score = round(0.8 * s_correct + 0.2 * s_brevity, 3)
 
+    # Binary framing reused for trace and feedback
+    gold_pos = bool(gold_norm)
+    guess_pos = bool(gold_norm) and (pred_norm == gold_norm)
+    pred_claim = bool(pred_ans_raw)
+    conf = confusion_outcomes(gold_pos, guess_pos, pred_claim)
+
+    # Lightweight trace for reflection
+    safe_trace_log(
+        trace,
+        {
+            "gold": gold_norm,
+            "pred": pred_norm,
+            "s_correct": s_correct,
+            "s_brevity": s_brevity,
+            "score": score,
+            "confusion": conf,
+        },
+    )
+
     if pred_name is None and pred_trace is None:
         return score
 
-    # --- Feedback ---
-    fb = []
-    if s_correct == 1.0:
-        fb.append("Correctness: exact/synonym match.")
-    elif s_correct >= 0.6:
-        fb.append(f"Correctness: near-miss (minor typo). Expected '{gold_norm}', got '{pred_ans_raw}'.")
-    else:
-        fb.append(f"Correctness: mismatch. Expected '{gold_norm}', got '{pred_ans_raw}'.")
+    # --- Feedback (TP/FN/FP/TN branches) ---
+    fb_parts: list[str] = []
+    if conf["TP"]:
+        fb_parts.append("Correct: exact or synonym match.")
+    elif conf["FN"]:
+        if s_correct >= 0.6:
+            fb_parts.append(
+                f"Near-miss (typo). Correct answer is '{gold_norm}'. Prefer exact spelling or canonical synonyms."
+            )
+        else:
+            fb_parts.append(f"Incorrect. Correct answer is '{gold_norm}'.")
+    elif conf["FP"]:
+        fb_parts.append("Unnecessary answer when none is expected; avoid hallucination.")
+    else:  # TN
+        fb_parts.append("Correct: no answer needed.")
 
+    # Brevity hints remain applicable across branches
     if s_brevity == 1.0:
-        fb.append("Brevity: good (single short word).")
+        fb_parts.append("Brevity: good (single short word).")
     elif s_brevity >= 0.6:
-        fb.append("Brevity: single word but long; prefer a shorter noun (<=5 chars).")
+        fb_parts.append("Brevity: single word but long; prefer a shorter noun (<=5 chars).")
     else:
-        fb.append("Brevity: too verbose; answer should be one noun.")
+        fb_parts.append("Brevity: too verbose; answer should be one noun.")
 
     if pred_name:
-        fb.append(f"Target predictor: {pred_name}.")
+        fb_parts.append(f"Target predictor: {pred_name}.")
 
-    feedback = " ".join(fb)
+    feedback = " ".join(fb_parts)
     return dspy.Prediction(score=score, feedback=feedback)
 
 

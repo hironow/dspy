@@ -43,6 +43,7 @@ from real_world.save import save_artifacts
 from real_world.utils import summarize_before_after, summarize_gepa_results
 from real_world.vector_adapter import Document, InMemoryTfIdfAdapter, VectorAdapter
 from real_world.wandb import get_wandb_args, make_run_name
+from real_world.metrics_utils import confusion_outcomes, safe_trace_log
 
 
 class VectorRAG(dspy.Module):
@@ -110,18 +111,44 @@ def rag_metric(
 
     score = round(0.8 * correctness + 0.2 * grounded, 3)
 
+    # Binary framing reused for trace and feedback
+    gold_pos = bool(g)
+    guess_pos = bool(g) and (a == g)
+    pred_claim = bool(a)
+    conf = confusion_outcomes(gold_pos, guess_pos, pred_claim)
+    num_passages = len(passages) if "passages" in locals() and isinstance(passages, list) else 0
+
+    # Trace essentials for reflection/debug
+    safe_trace_log(
+        trace,
+        {
+            "gold": g,
+            "pred": a,
+            "correctness": correctness,
+            "grounded": grounded,
+            "num_passages": num_passages,
+            "confusion": conf,
+        },
+    )
+
     if pred_name is None and pred_trace is None:
         return score
 
-    # Feedback
+    # Feedback using TP/FN/FP/TN branches (binary view)
     fb: list[str] = []
-    if correctness == 1.0:
+    if conf["TP"]:
         fb.append("Correct answer.")
-    else:
-        fb.append(f"Expected '{g}' but got '{a}'.")
+        if pred_name == "answer" and grounded < 1.0:
+            fb.append("Cite matching snippet(s) from passages to make evidence explicit.")
+    elif conf["FN"]:
+        fb.append(f"Incorrect. Expected '{g}', got '{a}'.")
+    elif conf["FP"]:
+        fb.append("Unnecessary answer when none is expected; avoid hallucination.")
+    else:  # TN
+        fb.append("Correct: no answer needed.")
 
     if pred_name == "rewrite":
-        fb.append("Ensure the rewritten query preserves key entities and intent; expand synonyms if recall is low.")
+        fb.append("Preserve key entities/intent; expand synonyms if recall is low.")
     elif pred_name == "answer":
         if grounded < 1.0:
             fb.append("Ground passages don't clearly contain the target phrase; cite matching snippet(s).")

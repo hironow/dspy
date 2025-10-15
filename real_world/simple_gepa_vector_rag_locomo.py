@@ -64,6 +64,7 @@ from real_world.save import save_artifacts
 from real_world.utils import summarize_before_after, summarize_gepa_results
 from real_world.vector_adapter import Document, InMemoryTfIdfAdapter, VectorAdapter
 from real_world.wandb import get_wandb_args, make_run_name
+from real_world.metrics_utils import confusion_outcomes, safe_trace_log
 
 
 class VectorRAG(dspy.Module):
@@ -115,14 +116,41 @@ def rag_metric(gold: dspy.Example, pred: dspy.Prediction, trace=None, pred_name:
 
     score = round(0.8 * correctness + 0.2 * grounded, 3)
 
+    # Binary framing reused for trace and feedback
+    gold_pos = bool(g)
+    guess_pos = bool(g) and (a == g)
+    pred_claim = bool(a)
+    conf = confusion_outcomes(gold_pos, guess_pos, pred_claim)
+    num_passages = len(passages) if "passages" in locals() and isinstance(passages, list) else 0
+
+    # Trace essentials for reflection/debug
+    safe_trace_log(
+        trace,
+        {
+            "gold": g,
+            "pred": a,
+            "correctness": correctness,
+            "grounded": grounded,
+            "num_passages": num_passages,
+            "confusion": conf,
+        },
+    )
+
     if pred_name is None and pred_trace is None:
         return score
 
+    # Feedback using TP/FN/FP/TN branches
     fb: list[str] = []
-    if correctness == 1.0:
-        fb.append("Correct answer.")
+    if conf["TP"]:
+        fb.append("正しい回答です。")
+        if pred_name == "answer" and grounded < 1.0:
+            fb.append("根拠スニペットを引用し、証拠を明示してください。")
+    elif conf["FN"]:
+        fb.append(f"不一致です。正解は '{g}' です。")
+    elif conf["FP"]:
+        fb.append("不要な回答です（正解がないケース）。幻覚を避けてください。")
     else:
-        fb.append(f"Expected '{g}' but got '{a}'.")
+        fb.append("正しい無回答です。")
 
     if pred_name == "rewrite":
         fb.append("固有名詞/数字/日付を保持し、曖昧語を具体化して検索再現性を上げてください。")

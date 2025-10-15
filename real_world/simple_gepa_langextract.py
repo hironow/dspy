@@ -99,6 +99,7 @@ from real_world.factory import langextract_dummy
 from real_world.helper import openai_gpt_4o_lm, openai_gpt_4o_mini_lm
 from real_world.save import save_artifacts
 from real_world.utils import summarize_before_after, summarize_gepa_results
+from real_world.metrics_utils import confusion_outcomes, safe_trace_log
 from real_world.wandb import get_wandb_args, make_run_name
 
 # -------------------------------
@@ -413,6 +414,15 @@ def langextract_metric(
     matched, total = _match_extractions(pred_extractions, gold_targets)
     score = 0.0 if total == 0 else round(matched / total, 3)
 
+    # Binary framing reused for trace and feedback
+    gold_pos = total > 0
+    guess_pos = (total > 0) and (matched == total)
+    pred_claim = len(pred_extractions) > 0
+    conf = confusion_outcomes(gold_pos, guess_pos, pred_claim)
+
+    # Trace essentials for reflection/debug
+    safe_trace_log(trace, {"matched": matched, "total": total, "score": score, "confusion": conf})
+
     # Evaluate mode
     if pred_name is None and pred_trace is None:
         return score
@@ -434,13 +444,22 @@ def langextract_metric(
             missing.append({"class": g_cls, "text": g_txt})
 
     fb_parts: list[str] = []
+
+    # TP/FN/FP/TN framing (full coverage = TP)
+    if conf["TP"]:
+        fb_parts.append("All expected extractions detected.")
+    elif conf["FN"]:
+        fb_parts.append("Missing extractions; cover all target classes and spans.")
+    elif conf["FP"]:
+        fb_parts.append("Unnecessary extractions when no targets are expected; avoid over-extracting.")
+    else:
+        fb_parts.append("Correct: no extractions needed.")
+
     if missing:
         cls_buckets: dict[str, list[str]] = {}
         for m in missing:
             cls_buckets.setdefault(m["class"], []).append(m["text"])
-        fb_parts.append("Missing extractions → " + ", ".join(f"{k}: {v}" for k, v in cls_buckets.items()))
-    else:
-        fb_parts.append("All expected extractions detected.")
+        fb_parts.append("Missing extractions: " + ", ".join(f"{k}: {v}" for k, v in cls_buckets.items()))
 
     # If optimizing the prompt builder, surface more focused guidance using its outputs
     if pred_name == "build_prompt":
@@ -465,7 +484,7 @@ def langextract_metric(
                             seen.add(str(e.get("extraction_class", "")).lower())
                     missing_in_examples = sorted(list(want - seen))
                     if missing_in_examples:
-                        fb_parts.append("Examples: add coverage for classes → " + ", ".join(missing_in_examples))
+                        fb_parts.append("Examples: add coverage for classes: " + ", ".join(missing_in_examples))
             except Exception:
                 fb_parts.append("examples_json is not valid JSON; output a JSON array of {text, extractions}.")
         except Exception:
