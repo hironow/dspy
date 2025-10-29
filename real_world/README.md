@@ -144,6 +144,7 @@
   - Predictor単位のFB（pred_name/pred_trace）で「どこをどう直すか」を具体化
 
 補足:
+
 - 分類向けの厳格・再現重視（FN抑制）メトリクス例を `real_world/metrics_privacy_risk.py` に追加。
   - 出力の厳格バリデーション（"High Risk"/"Low Risk"）
   - 混同行列の簡易トレースログ
