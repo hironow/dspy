@@ -100,6 +100,7 @@
 
 - gradio_chat.py
   - Gradio 製の軽量チャット UI。OpenAI ヘルパーやダミー応答を切り替えて試しながら、最新応答を Good/Bad でラベル付けし、履歴付きで TSV ダウンロードが可能。
+  - 詳細ガイド: [docs/gradio_chat_usage.md](docs/gradio_chat_usage.md)
   - 起動例: `uv run python real_world/gradio_chat.py --share`（CLI フラグでバックエンド初期値やテーマを指定可能）。
 
 - helper.py
@@ -126,7 +127,7 @@
 - save.py
   - `save_artifacts(program, optimized, save_dir, prefix, logger)`：baseline/optimized/detailed_results を保存
 
-- simple_gepa_architecture.md
+- [docs/simple_gepa_architecture.md](docs/simple_gepa_architecture.md)
   - 各サンプルの最適化後アーキテクチャ（アスキー図）と Evaluate/GEPA の役割説明
 
 ---
