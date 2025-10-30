@@ -24,12 +24,17 @@ import tempfile
 from collections import OrderedDict
 from functools import partial
 from pathlib import Path
-from typing import Any, Iterable, List, Literal
+from typing import Any, Iterable, Literal
 
 import gradio as gr
 from loguru import logger
 
 import dspy
+from real_world.gepa_chat_programs import (
+    ProgramRequest,
+    get_program,
+    list_programs,
+)
 from real_world.helper import openai_lm
 
 # Chatbot message representation (OpenAI style).
@@ -67,8 +72,14 @@ class ChatBackend:
         return openai_lm(model)
 
     @property
-    def options(self) -> List[str]:
+    def options(self) -> list[str]:
         return list(self._builders.keys())
+
+    def require_lm(self, key: str) -> dspy.LM:
+        """Return a DSPy LM instance for program integration."""
+        if key == "dummy (offline echo)":
+            raise ValueError("Dummy backend does not provide a DSPy LM instance.")
+        return self._get_lm(key)
 
     def _get_lm(self, key: str) -> dspy.LM:
         if key not in self._builders:
@@ -183,6 +194,9 @@ def _resolve_theme(theme: str | None) -> Any | None:
 def build_app(default_backend: str | None = None, *, theme: str | None = None) -> gr.Blocks:
     manager = ChatBackend()
     default_choice = default_backend if default_backend in manager.options else manager.options[0]
+    descriptors = [d for d in list_programs() if d.available]
+    descriptor_map = {d.slug: d for d in descriptors}
+    PROGRAM_NONE = "__lm_only__"
 
     resolved_theme = _resolve_theme(theme)
     blocks_kwargs: dict[str, Any] = {"title": "DSPy Chat Console"}
@@ -206,6 +220,13 @@ def build_app(default_backend: str | None = None, *, theme: str | None = None) -
             label="Backend",
             info="Choose which DSPy LM to invoke. Dummy mode requires no API keys.",
         )
+        program_choice = gr.Dropdown(
+            [PROGRAM_NONE] + [d.slug for d in descriptors],
+            value=PROGRAM_NONE,
+            label="DSPy Program",
+            info="Select a pre-compiled GEPA program or fall back to raw LM chat.",
+        )
+        program_info = gr.Markdown("Raw LM chat (no DSPy program).")
         system_prompt = gr.Textbox(
             label="System prompt (optional)",
             placeholder="例: あなたは丁寧な日本語で回答するアシスタントです。",
@@ -233,13 +254,52 @@ def build_app(default_backend: str | None = None, *, theme: str | None = None) -
             height=420,
             type="messages",
         )
+        default_placeholder = "メッセージを入力して送信してください。"
         user_input = gr.Textbox(
             label="User message",
-            placeholder="メッセージを入力して送信してください。",
+            placeholder=default_placeholder,
             lines=2,
         )
         send_btn = gr.Button("Send", variant="primary")
         clear_btn = gr.Button("Clear conversation")
+
+        def describe_program(slug: str):
+            if slug == PROGRAM_NONE:
+                return (
+                    gr.update(value="Raw LM chat (no DSPy program)."),
+                    gr.update(placeholder=default_placeholder),
+                )
+            descriptor = descriptor_map.get(slug)
+            try:
+                program = get_program(slug)
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.exception("Failed to load program {}: {}", slug, exc)
+                return (
+                    gr.update(value=f"[ERROR] プログラム {slug} のロードに失敗しました。{exc}"),
+                    gr.update(placeholder=default_placeholder),
+                )
+            display = descriptor.display_name if descriptor else slug
+            info_lines = [f"**{display}**"]
+            if descriptor and descriptor.description:
+                info_lines.append("")
+                info_lines.append(descriptor.description)
+            optimized_path = getattr(program, "optimized_path", None)
+            if optimized_path:
+                info_lines.append("")
+                info_lines.append(f"使用中の最適化済みモデル: `{optimized_path}`")
+            hint = getattr(program, "input_hint", default_placeholder)
+            info_lines.append("")
+            info_lines.append(f"入力ヒント: {hint}")
+            return (
+                gr.update(value="\n".join(info_lines)),
+                gr.update(placeholder=hint or default_placeholder),
+            )
+
+        program_choice.change(
+            describe_program,
+            inputs=[program_choice],
+            outputs=[program_info, user_input],
+        )
 
         feedback_status = gr.Markdown("")
         feedback_table = gr.Dataframe(
@@ -260,18 +320,36 @@ def build_app(default_backend: str | None = None, *, theme: str | None = None) -
             sys_prompt: str,
             temp: float,
             max_tok: int,
+            program_slug: str,
         ):
             if not message.strip():
                 return history, ""
             try:
                 history = history or []
-                messages = _build_messages(history, message, sys_prompt)
-                reply = manager.generate(
-                    backend,
-                    messages,
-                    temperature=temp,
-                    max_tokens=max_tok,
-                )
+                if program_slug and program_slug != PROGRAM_NONE:
+                    lm = manager.require_lm(backend)
+                    program = get_program(program_slug)
+                    request = ProgramRequest(
+                        prompt=message,
+                        history=history,
+                        lm=lm,
+                        options={
+                            "system_prompt": sys_prompt,
+                            "temperature": temp,
+                            "max_tokens": max_tok,
+                            "backend": backend,
+                        },
+                    )
+                    result = program.run(request)
+                    reply = result.text
+                else:
+                    messages = _build_messages(history, message, sys_prompt)
+                    reply = manager.generate(
+                        backend,
+                        messages,
+                        temperature=temp,
+                        max_tokens=max_tok,
+                    )
             except Exception as exc:  # pylint: disable=broad-except
                 logger.exception("Generation failed: {}", exc)
                 reply = f"[ERROR] {exc}"
@@ -283,7 +361,15 @@ def build_app(default_backend: str | None = None, *, theme: str | None = None) -
 
         send_btn.click(
             respond,
-            inputs=[user_input, chatbot, backend_choice, system_prompt, temperature, max_tokens],
+            inputs=[
+                user_input,
+                chatbot,
+                backend_choice,
+                system_prompt,
+                temperature,
+                max_tokens,
+                program_choice,
+            ],
             outputs=[chatbot, user_input],
         )
 
