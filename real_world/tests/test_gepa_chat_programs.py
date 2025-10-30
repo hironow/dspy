@@ -65,6 +65,21 @@ def test_langextract_program_fallback_outputs_extractions():
     assert "Juliet" in response.text
 
 
-def test_unsupported_program_raises():
-    with pytest.raises(RuntimeError):
-        get_program("simple_gepa_multimodal_caption")
+@pytest.mark.parametrize(
+    "slug",
+    [
+        "simple_gepa_multimodal_caption",
+        "simple_gepa_multimodal_observe_compose",
+    ],
+)
+def test_multimodal_program_availability(slug: str):
+    descriptors = {descriptor.slug: descriptor for descriptor in list_programs()}
+    desc = descriptors.get(slug)
+    if desc is None:
+        pytest.skip(f"Descriptor for {slug} not registered.")
+    if desc.available:
+        program = get_program(slug)
+        assert getattr(program, "slug", "") == slug
+    else:
+        with pytest.raises(RuntimeError):
+            get_program(slug)

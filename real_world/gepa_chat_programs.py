@@ -30,6 +30,17 @@ from loguru import logger
 
 import dspy
 
+try:
+    from dspy.adapters.types import Image as _DspyImage
+
+    _MULTIMODAL_IMAGE_TYPE: type | None = _DspyImage
+    _MULTIMODAL_AVAILABLE = True
+    _MULTIMODAL_NOTE: str | None = None
+except Exception as exc:  # pragma: no cover - optional dependency
+    _MULTIMODAL_IMAGE_TYPE = None
+    _MULTIMODAL_AVAILABLE = False
+    _MULTIMODAL_NOTE = f"Multimodal support unavailable ({exc})."
+
 # ----------------------------
 # Type aliases
 # ----------------------------
@@ -45,6 +56,7 @@ class ProgramRequest:
     prompt: str
     history: History
     lm: dspy.LM | None = None
+    attachments: Sequence[str] | None = None
     options: Mapping[str, Any] | None = None
 
 
@@ -417,6 +429,114 @@ class SimpleGEPALangExtractProgram(_BaseProgram):
         return ProgramResponse(text=text, details=details, raw=pred)
 
 
+class SimpleGEPAMultimodalCaptionProgram(_BaseProgram):
+    slug = "simple_gepa_multimodal_caption"
+    display_name = "Simple GEPA Multimodal Caption"
+    description = "画像を入力として主体→属性→行為→背景の順で短いキャプションとキーワードを生成するサンプル。"
+    input_hint = "画像をアップロードし、必要に応じて補足テキストを入力してください。"
+    artifact_prefix = "simple_gepa_multimodal"
+    modalities = frozenset({"image", "text"})
+
+    _caption_instruction = "画像を見ていない人に伝えるため、主体→属性（色・形）→行為・状態→背景の順で、1〜2文の簡潔な説明とキーワードを出力してください。"
+
+    def __init__(self):
+        if _MULTIMODAL_IMAGE_TYPE is None:
+            raise RuntimeError(_MULTIMODAL_NOTE or "Multimodal support is unavailable.")
+        module = __import__("real_world.simple_gepa_multimodal_caption", fromlist=["Captioner"])
+        self._image_type = _MULTIMODAL_IMAGE_TYPE
+        self.program: dspy.Module = module.Captioner()
+        self.program.caption.signature = self.program.caption.signature.with_instructions(self._caption_instruction)
+        self._load_optimized_state()
+
+    def _predict(self, request: ProgramRequest) -> ProgramResponse:
+        attachments = list(request.attachments or [])
+        if not attachments:
+            return ProgramResponse(
+                text="（画像ファイルをアップロードしてください。）",
+                details={"program": self.slug},
+            )
+        image_path = attachments[0]
+        try:
+            image = self._image_type(image_path)
+        except Exception as exc:  # pragma: no cover - depends on optional deps
+            return ProgramResponse(
+                text=f"[ERROR] 画像の読み込みに失敗しました: {exc}",
+                details={"program": self.slug, "image": image_path},
+            )
+        with _lm_scope(request.lm):
+            pred = self.program(image=image)
+        caption = str(getattr(pred, "caption", "") or "")
+        keywords = [str(k) for k in (getattr(pred, "keywords", []) or [])]
+        lines = [caption] if caption else []
+        if keywords:
+            lines.append("Keywords: " + ", ".join(keywords))
+        text = "\n".join(lines) or "（応答が生成されませんでした）"
+        details: MutableMapping[str, Any] = {
+            "program": self.slug,
+            "image": image_path,
+            "caption": caption,
+            "keywords": keywords,
+        }
+        if self.optimized_path:
+            details["optimized_path"] = self.optimized_path
+        return ProgramResponse(text=text, details=details, raw=pred)
+
+
+class SimpleGEPAMultimodalObserveComposeProgram(_BaseProgram):
+    slug = "simple_gepa_multimodal_observe_compose"
+    display_name = "Simple GEPA Multimodal Observe & Compose"
+    description = "観測→作文の二段構成で画像から観測語とキャプションを生成するサンプル。"
+    input_hint = "画像をアップロードし、必要に応じて補足テキストを入力してください。"
+    artifact_prefix = "simple_gepa_multimodal_oc"
+    modalities = frozenset({"image", "text"})
+
+    _analyze_instruction = "画像から主要な観測語彙を抽出してください。順序は 主体→属性（色・形）→行為→背景。meta にはEXIF等の補足があれば短語で。"
+    _compose_instruction = "与えられた観測（objects/attributes/actions/scene/meta）を自然に統合し、1〜2文の簡潔な説明と keywords を出力してください。"
+
+    def __init__(self):
+        if _MULTIMODAL_IMAGE_TYPE is None:
+            raise RuntimeError(_MULTIMODAL_NOTE or "Multimodal support is unavailable.")
+        module = __import__("real_world.simple_gepa_multimodal_observe_compose", fromlist=["ObsComposeCaptioner"])
+        self._image_type = _MULTIMODAL_IMAGE_TYPE
+        self.program: dspy.Module = module.ObsComposeCaptioner()
+        self.program.analyze.signature = self.program.analyze.signature.with_instructions(self._analyze_instruction)
+        self.program.compose.signature = self.program.compose.signature.with_instructions(self._compose_instruction)
+        self._load_optimized_state()
+
+    def _predict(self, request: ProgramRequest) -> ProgramResponse:
+        attachments = list(request.attachments or [])
+        if not attachments:
+            return ProgramResponse(
+                text="（画像ファイルをアップロードしてください。）",
+                details={"program": self.slug},
+            )
+        image_path = attachments[0]
+        try:
+            image = self._image_type(image_path)
+        except Exception as exc:  # pragma: no cover - depends on optional deps
+            return ProgramResponse(
+                text=f"[ERROR] 画像の読み込みに失敗しました: {exc}",
+                details={"program": self.slug, "image": image_path},
+            )
+        with _lm_scope(request.lm):
+            pred = self.program(image=image)
+        caption = str(getattr(pred, "caption", "") or "")
+        keywords = [str(k) for k in (getattr(pred, "keywords", []) or [])]
+        lines = [caption] if caption else []
+        if keywords:
+            lines.append("Keywords: " + ", ".join(keywords))
+        text = "\n".join(lines) or "（応答が生成されませんでした）"
+        details: MutableMapping[str, Any] = {
+            "program": self.slug,
+            "image": image_path,
+            "caption": caption,
+            "keywords": keywords,
+        }
+        if self.optimized_path:
+            details["optimized_path"] = self.optimized_path
+        return ProgramResponse(text=text, details=details, raw=pred)
+
+
 class UnsupportedProgram(_BaseProgram):
     """Placeholder for demos that require additional UI modalities (e.g., images)."""
 
@@ -530,35 +650,25 @@ _register(
         builder=SimpleGEPALangExtractProgram,
     )
 )
-
-# Register placeholders for multimodal demos (currently unavailable in text chat)
 _register(
     ProgramDescriptor(
-        slug="simple_gepa_multimodal_caption",
-        display_name="Simple GEPA Multimodal Caption",
-        description="画像アップロードが必要なため、テキストのみのチャットUIでは未対応です。",
-        builder=lambda: UnsupportedProgram(
-            slug="simple_gepa_multimodal_caption",
-            display_name="Simple GEPA Multimodal Caption",
-            reason="画像を入力できるUIを追加してください。",
-        ),
-        modalities=frozenset({"image"}),
-        available=False,
-        note="Requires image upload component.",
+        slug=SimpleGEPAMultimodalCaptionProgram.slug,
+        display_name=SimpleGEPAMultimodalCaptionProgram.display_name,
+        description=SimpleGEPAMultimodalCaptionProgram.description,
+        builder=SimpleGEPAMultimodalCaptionProgram,
+        modalities=SimpleGEPAMultimodalCaptionProgram.modalities,
+        available=_MULTIMODAL_AVAILABLE,
+        note=_MULTIMODAL_NOTE,
     )
 )
 _register(
     ProgramDescriptor(
-        slug="simple_gepa_multimodal_observe_compose",
-        display_name="Simple GEPA Multimodal Observe & Compose",
-        description="画像＋テキストの複合入力が必要なため、現行UIでは未対応です。",
-        builder=lambda: UnsupportedProgram(
-            slug="simple_gepa_multimodal_observe_compose",
-            display_name="Simple GEPA Multimodal Observe & Compose",
-            reason="画像入力と複数フィールドが必要です。",
-        ),
-        modalities=frozenset({"image", "text"}),
-        available=False,
-        note="Requires image upload + structured inputs.",
+        slug=SimpleGEPAMultimodalObserveComposeProgram.slug,
+        display_name=SimpleGEPAMultimodalObserveComposeProgram.display_name,
+        description=SimpleGEPAMultimodalObserveComposeProgram.description,
+        builder=SimpleGEPAMultimodalObserveComposeProgram,
+        modalities=SimpleGEPAMultimodalObserveComposeProgram.modalities,
+        available=_MULTIMODAL_AVAILABLE,
+        note=_MULTIMODAL_NOTE,
     )
 )

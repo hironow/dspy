@@ -38,7 +38,7 @@ from real_world.gepa_chat_programs import (
 from real_world.helper import openai_lm
 
 # Chatbot message representation (OpenAI style).
-Message = dict[str, str]
+Message = dict[str, Any]
 History = list[Message]
 
 # ----------------------------
@@ -141,7 +141,11 @@ def _build_messages(history: History, user_message: str, system_prompt: str | No
     msgs: History = []
     if system_prompt:
         msgs.append({"role": "system", "content": system_prompt})
-    msgs.extend(history)
+    for msg in history:
+        role = msg.get("role")
+        content = msg.get("content")
+        if isinstance(content, str):
+            msgs.append({"role": role, "content": content})
     msgs.append({"role": "user", "content": user_message})
     return msgs
 
@@ -157,7 +161,7 @@ def _format_history(history: History) -> str:
     lines: list[str] = []
     for msg in history:
         role = msg.get("role", "")
-        content = msg.get("content", "")
+        content = _content_to_text(msg.get("content"))
         if role == "user":
             lines.append(f"User: {content}")
         elif role == "assistant":
@@ -169,6 +173,33 @@ def _format_history(history: History) -> str:
 
 def _sanitize_cell(value: str) -> str:
     return value.replace("\t", "    ").replace("\r", " ").replace("\n", "\\n")
+
+
+def _content_to_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, dict):
+        if "path" in content:
+            try:
+                name = Path(content["path"]).name
+            except Exception:  # pragma: no cover - defensive
+                name = str(content.get("path"))
+            return f"[file:{name}]"
+        if "text" in content and isinstance(content["text"], str):
+            return content["text"]
+        if "value" in content and isinstance(content["value"], str):
+            return content["value"]
+    return str(content)
+
+
+def _gather_user_segment(history: History, assistant_index: int) -> list[str]:
+    user_chunks: list[str] = []
+    for idx in range(assistant_index - 1, -1, -1):
+        entry = history[idx]
+        if entry.get("role") != "user":
+            break
+        user_chunks.append(_content_to_text(entry.get("content")))
+    return list(reversed(user_chunks))
 
 
 def _resolve_theme(theme: str | None) -> Any | None:
@@ -254,11 +285,14 @@ def build_app(default_backend: str | None = None, *, theme: str | None = None) -
             height=420,
             type="messages",
         )
-        default_placeholder = "メッセージを入力して送信してください。"
-        user_input = gr.Textbox(
+        default_placeholder = "メッセージを入力するか、画像/音声をアップロードしてください。"
+        user_input = gr.MultimodalTextbox(
             label="User message",
             placeholder=default_placeholder,
-            lines=2,
+            show_label=False,
+            sources=["upload", "microphone"],
+            file_count="multiple",
+            interactive=True,
         )
         send_btn = gr.Button("Send", variant="primary")
         clear_btn = gr.Button("Clear conversation")
@@ -267,7 +301,7 @@ def build_app(default_backend: str | None = None, *, theme: str | None = None) -
             if slug == PROGRAM_NONE:
                 return (
                     gr.update(value="Raw LM chat (no DSPy program)."),
-                    gr.update(placeholder=default_placeholder),
+                    gr.update(placeholder=default_placeholder, value=None, interactive=True),
                 )
             descriptor = descriptor_map.get(slug)
             try:
@@ -276,7 +310,7 @@ def build_app(default_backend: str | None = None, *, theme: str | None = None) -
                 logger.exception("Failed to load program {}: {}", slug, exc)
                 return (
                     gr.update(value=f"[ERROR] プログラム {slug} のロードに失敗しました。{exc}"),
-                    gr.update(placeholder=default_placeholder),
+                    gr.update(placeholder=default_placeholder, value=None, interactive=True),
                 )
             display = descriptor.display_name if descriptor else slug
             info_lines = [f"**{display}**"]
@@ -292,7 +326,7 @@ def build_app(default_backend: str | None = None, *, theme: str | None = None) -
             info_lines.append(f"入力ヒント: {hint}")
             return (
                 gr.update(value="\n".join(info_lines)),
-                gr.update(placeholder=hint or default_placeholder),
+                gr.update(placeholder=hint or default_placeholder, value=None, interactive=True),
             )
 
         program_choice.change(
@@ -314,7 +348,7 @@ def build_app(default_backend: str | None = None, *, theme: str | None = None) -
         export_file = gr.File(label="Download TSV", interactive=False)
 
         def respond(
-            message: str,
+            payload: Any,
             history: History,
             backend: str,
             sys_prompt: str,
@@ -322,17 +356,37 @@ def build_app(default_backend: str | None = None, *, theme: str | None = None) -
             max_tok: int,
             program_slug: str,
         ):
-            if not message.strip():
-                return history, ""
+            base_history = history or []
+            message_text = ""
+            attachments: list[str] = []
+            if isinstance(payload, dict):
+                attachments = [str(p) for p in (payload.get("files") or []) if isinstance(p, str)]
+                message_text = str(payload.get("text") or "").strip()
+            else:
+                message_text = str(payload or "").strip()
+
+            if not message_text and not attachments:
+                return base_history, gr.update(value=None, interactive=True)
+
+            working_history = list(base_history)
+            for file_path in attachments:
+                working_history.append({"role": "user", "content": {"path": file_path}})
+            if message_text:
+                working_history.append({"role": "user", "content": message_text})
+
+            reply: str
             try:
-                history = history or []
                 if program_slug and program_slug != PROGRAM_NONE:
-                    lm = manager.require_lm(backend)
-                    program = get_program(program_slug)
-                    request = ProgramRequest(
-                        prompt=message,
-                        history=history,
-                        lm=lm,
+                    if backend == "dummy (offline echo)":
+                        reply = "この DSPy プログラムを使うには実際の LM バックエンドを選択してください。"
+                    else:
+                        lm = manager.require_lm(backend)
+                        program = get_program(program_slug)
+                        request = ProgramRequest(
+                            prompt=message_text,
+                            history=list(working_history),
+                            lm=lm,
+                            attachments=attachments,
                         options={
                             "system_prompt": sys_prompt,
                             "temperature": temp,
@@ -343,23 +397,39 @@ def build_app(default_backend: str | None = None, *, theme: str | None = None) -
                     result = program.run(request)
                     reply = result.text
                 else:
-                    messages = _build_messages(history, message, sys_prompt)
-                    reply = manager.generate(
-                        backend,
-                        messages,
-                        temperature=temp,
-                        max_tokens=max_tok,
-                    )
+                    if attachments:
+                        reply = (
+                            "Raw LM chat はファイル入力に対応していません。対応する DSPy プログラムを選択してください。"
+                        )
+                    else:
+                        messages = _build_messages(base_history, message_text, sys_prompt)
+                        reply = manager.generate(
+                            backend,
+                            messages,
+                            temperature=temp,
+                            max_tokens=max_tok,
+                        )
             except Exception as exc:  # pylint: disable=broad-except
                 logger.exception("Generation failed: {}", exc)
                 reply = f"[ERROR] {exc}"
-            updated = list(history) + [
-                {"role": "user", "content": message},
-                {"role": "assistant", "content": reply},
-            ]
-            return updated, ""
+
+            working_history.append({"role": "assistant", "content": reply})
+            return working_history, gr.update(value=None, interactive=True)
 
         send_btn.click(
+            respond,
+            inputs=[
+                user_input,
+                chatbot,
+                backend_choice,
+                system_prompt,
+                temperature,
+                max_tokens,
+                program_choice,
+            ],
+            outputs=[chatbot, user_input],
+        )
+        user_input.submit(
             respond,
             inputs=[
                 user_input,
@@ -414,18 +484,15 @@ def build_app(default_backend: str | None = None, *, theme: str | None = None) -
                     if idx >= len(assistant_positions):
                         idx = len(assistant_positions) - 1
                     message_idx = assistant_positions[idx]
-            assistant_reply = history[message_idx].get("content", "")
+            assistant_reply = _content_to_text(history[message_idx].get("content"))
             if not assistant_reply:
                 return (
                     log_state,
                     gr.update(value=_log_rows(log_state)),
                     gr.update(value="ラベル付け可能な応答がありません。"),
                 )
-            user_msg = ""
-            for j in range(message_idx - 1, -1, -1):
-                if history[j].get("role") == "user":
-                    user_msg = history[j].get("content", "")
-                    break
+            user_chunks = _gather_user_segment(history, message_idx)
+            user_msg = " ".join(chunk for chunk in user_chunks if chunk).strip()
             history_text = _format_history(history)
             new_entry = {
                 "timestamp": dt.datetime.now().isoformat(timespec="seconds"),

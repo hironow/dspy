@@ -130,6 +130,50 @@
 - [docs/simple_gepa_architecture.md](docs/simple_gepa_architecture.md)
   - 各サンプルの最適化後アーキテクチャ（アスキー図）と Evaluate/GEPA の役割説明
 
+### Gradio チャット統合の構成
+
+`gradio_chat.py` は単なる LM 実験 UI から発展し、GEPA サンプル群と疎結合で連携できるようになりました。構成イメージは以下の通りです。
+
+```
++----------------------------+
+| Gradio UI (gradio_chat.py) |
+|  ├─ Backend dropdown       |
+|  ├─ Program dropdown       |
+|  └─ Chatbot + feedback log |
++-------------+--------------+
+              | ProgramRequest
+              v
++-----------------------------+
+| GEPA Program Registry       |
+| (gepa_chat_programs.py)     |
+|  ├─ Simple GEPA Basic       |
+|  ├─ Task Metric QA          |
+|  ├─ Structured Invoice      |
+|  ├─ Routed Sources          |
+|  ├─ Vector RAG / LoCoMo     |
+|  └─ LangExtract fallback    |
++-------------+---------------+
+              | require_lm()
+              v
++-----------------------------+
+| DSPy LM backends (ChatBackend) |
+|  ├─ openai/gpt-4o-mini         |
+|  ├─ openai/gpt-4o              |
+|  └─ dummy (offline echo)       |
++--------------------------------+
+```
+
+- Program dropdown で `Raw LM chat` を選択すると従来通りの LM 対話。具体的な `simple_gepa_*` を選ぶと、`ProgramRequest` 経由で最適化済みモジュールが呼び出されます。
+- `gepa_chat_programs.py` は起動時に `real_world/exports/` から最新の `*-optimized-*.json`/`*.pkl` を自動ロードします。明示的に指定したい場合は環境変数で上書きできます。
+  - `DSPY_GEPA_EXPORT_DIR`：検索するディレクトリを一括変更
+  - `DSPY_GEPA_<SLUG>_OPTIMIZED`：特定プログラムの最適化済みファイルを直接指定（例: `DSPY_GEPA_SIMPLE_GEPA_BASIC_OPTIMIZED=/path/to/file.json`）
+- 画像対応（`MultimodalTextbox`）により、`simple_gepa_multimodal_caption` や `simple_gepa_multimodal_observe_compose` などのマルチモーダル GEPA サンプルも、依存関係（`dspy.adapters.types.Image` が利用可能な環境）であればドロップダウンから直接呼び出せます。依存が不足している場合は自動的にリストから除外されます。
+
+- 送信時の挙動：
+  1. プログラム選択あり → `ChatBackend.require_lm()` で LM インスタンスを取得し、`ProgramRequest` を作成。
+  2. プログラムなし → これまで通りメッセージ履歴を LM に渡して応答を生成。
+  3. どちらの場合も履歴は `role/content` 形式で保持され、Good/Bad ラベルや TSV エクスポート機能はそのまま利用可能。
+
 ---
 
 ## 使い分け（Dummy と Real LMs）
