@@ -5,7 +5,7 @@ Features
 --------
 - Dropdown to choose between supported DSPy LMs (OpenAI helpers or a local dummy echo).
 - Optional system prompt plus temperature / max_tokens controls for quick experiments.
-- Good / Bad buttons to label the latest assistant response and maintain a feedback table.
+- Use inline 👍 / 👎 controls to label the latest assistant response and maintain a feedback table.
 - Runs entirely as a Gradio Blocks app so it can be launched via CLI.
 
 Usage
@@ -31,6 +31,10 @@ from loguru import logger
 
 import dspy
 from real_world.helper import openai_lm
+
+# Chatbot message representation (OpenAI style).
+Message = dict[str, str]
+History = list[Message]
 
 # ----------------------------
 # Backend management
@@ -122,18 +126,11 @@ class ChatBackend:
 # ----------------------------
 
 
-def _build_messages(
-    history: list[tuple[str, str | None]],
-    user_message: str,
-    system_prompt: str | None,
-) -> list[dict[str, str]]:
-    msgs: list[dict[str, str]] = []
+def _build_messages(history: History, user_message: str, system_prompt: str | None) -> History:
+    msgs: History = []
     if system_prompt:
         msgs.append({"role": "system", "content": system_prompt})
-    for user, assistant in history:
-        msgs.append({"role": "user", "content": user})
-        if assistant:
-            msgs.append({"role": "assistant", "content": assistant})
+    msgs.extend(history)
     msgs.append({"role": "user", "content": user_message})
     return msgs
 
@@ -145,12 +142,17 @@ def _log_rows(log: list[dict[str, str]]) -> list[list[str]]:
     return [[entry[h] for h in LOG_HEADERS] for entry in log]
 
 
-def _format_history(history: list[tuple[str, str | None]]) -> str:
+def _format_history(history: History) -> str:
     lines: list[str] = []
-    for user_msg, assistant_msg in history:
-        lines.append(f"User: {user_msg}")
-        if assistant_msg:
-            lines.append(f"Assistant: {assistant_msg}")
+    for msg in history:
+        role = msg.get("role", "")
+        content = msg.get("content", "")
+        if role == "user":
+            lines.append(f"User: {content}")
+        elif role == "assistant":
+            lines.append(f"Assistant: {content}")
+        elif role:
+            lines.append(f"{role.capitalize()}: {content}")
     return "\\n".join(lines)
 
 
@@ -158,11 +160,36 @@ def _sanitize_cell(value: str) -> str:
     return value.replace("\t", "    ").replace("\r", " ").replace("\n", "\\n")
 
 
-def build_app(default_backend: str | None = None) -> gr.Blocks:
+def _resolve_theme(theme: str | None) -> Any | None:
+    if not theme:
+        return None
+    if "/" in theme:
+        return theme
+    themes_module = getattr(gr, "themes", None)
+    if themes_module is None:
+        logger.warning("Gradio themes module unavailable; ignoring theme '{}'.", theme)
+        return None
+    candidate = getattr(themes_module, theme, None)
+    if candidate is None:
+        logger.warning("Unknown theme '{}'; using default theme.", theme)
+        return None
+    try:
+        return candidate()
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.warning("Failed to initialize theme '{}': {}", theme, exc)
+        return None
+
+
+def build_app(default_backend: str | None = None, *, theme: str | None = None) -> gr.Blocks:
     manager = ChatBackend()
     default_choice = default_backend if default_backend in manager.options else manager.options[0]
 
-    with gr.Blocks(title="DSPy Chat Console") as demo:
+    resolved_theme = _resolve_theme(theme)
+    blocks_kwargs: dict[str, Any] = {"title": "DSPy Chat Console"}
+    if resolved_theme is not None:
+        blocks_kwargs["theme"] = resolved_theme
+
+    with gr.Blocks(**blocks_kwargs) as demo:
         gr.Markdown(
             """
             # DSPy Chat Console
@@ -204,6 +231,7 @@ def build_app(default_backend: str | None = None) -> gr.Blocks:
         chatbot = gr.Chatbot(
             label="Conversation",
             height=420,
+            type="messages",
         )
         user_input = gr.Textbox(
             label="User message",
@@ -227,7 +255,7 @@ def build_app(default_backend: str | None = None) -> gr.Blocks:
 
         def respond(
             message: str,
-            history: list[tuple[str, str | None]],
+            history: History,
             backend: str,
             sys_prompt: str,
             temp: float,
@@ -236,6 +264,7 @@ def build_app(default_backend: str | None = None) -> gr.Blocks:
             if not message.strip():
                 return history, ""
             try:
+                history = history or []
                 messages = _build_messages(history, message, sys_prompt)
                 reply = manager.generate(
                     backend,
@@ -246,7 +275,10 @@ def build_app(default_backend: str | None = None) -> gr.Blocks:
             except Exception as exc:  # pylint: disable=broad-except
                 logger.exception("Generation failed: {}", exc)
                 reply = f"[ERROR] {exc}"
-            updated = history + [(message, reply)]
+            updated = list(history) + [
+                {"role": "user", "content": message},
+                {"role": "assistant", "content": reply},
+            ]
             return updated, ""
 
         send_btn.click(
@@ -266,7 +298,7 @@ def build_app(default_backend: str | None = None) -> gr.Blocks:
 
         def record_feedback(
             label: Literal["good", "bad"],
-            history: list[tuple[str, str | None]],
+            history: History,
             log_state: list[dict[str, str]],
             index: int | None = None,
         ):
@@ -276,14 +308,38 @@ def build_app(default_backend: str | None = None) -> gr.Blocks:
                     gr.update(value=_log_rows(log_state)),
                     gr.update(value="ラベル付け可能な応答がありません。"),
                 )
-            target_idx = len(history) - 1 if index is None else max(0, min(int(index), len(history) - 1))
-            user_msg, assistant_reply = history[target_idx]
+            assistant_positions = [i for i, msg in enumerate(history) if msg.get("role") == "assistant"]
+            if not assistant_positions:
+                return (
+                    log_state,
+                    gr.update(value=_log_rows(log_state)),
+                    gr.update(value="ラベル付け可能な応答がありません。"),
+                )
+            message_idx: int
+            if index is None:
+                message_idx = assistant_positions[-1]
+            else:
+                idx = int(index)
+                if 0 <= idx < len(history) and history[idx].get("role") == "assistant":
+                    message_idx = idx
+                else:
+                    if idx < 0:
+                        idx = 0
+                    if idx >= len(assistant_positions):
+                        idx = len(assistant_positions) - 1
+                    message_idx = assistant_positions[idx]
+            assistant_reply = history[message_idx].get("content", "")
             if not assistant_reply:
                 return (
                     log_state,
                     gr.update(value=_log_rows(log_state)),
                     gr.update(value="ラベル付け可能な応答がありません。"),
                 )
+            user_msg = ""
+            for j in range(message_idx - 1, -1, -1):
+                if history[j].get("role") == "user":
+                    user_msg = history[j].get("content", "")
+                    break
             history_text = _format_history(history)
             new_entry = {
                 "timestamp": dt.datetime.now().isoformat(timespec="seconds"),
@@ -294,14 +350,15 @@ def build_app(default_backend: str | None = None) -> gr.Blocks:
                 "history": history_text,
             }
             new_log = list(log_state) + [new_entry]
+            pair_idx = assistant_positions.index(message_idx) + 1
             msg = (
-                f"応答 #{target_idx + 1} を 👍 Good として記録しました。"
+                f"応答 #{pair_idx} を 👍 Good として記録しました。"
                 if label == "good"
-                else f"応答 #{target_idx + 1} を 👎 Bad として記録しました。"
+                else f"応答 #{pair_idx} を 👎 Bad として記録しました。"
             )
             return new_log, gr.update(value=_log_rows(new_log)), gr.update(value=msg)
 
-        def handle_like(data: gr.LikeData, history: list[tuple[str, str | None]], log_state: list[dict[str, str]]):
+        def handle_like(data: gr.LikeData, history: History, log_state: list[dict[str, str]]):
             if data.liked is None:
                 return (
                     log_state,
@@ -320,7 +377,13 @@ def build_app(default_backend: str | None = None) -> gr.Blocks:
         def export_feedback(log_state: list[dict[str, str]]):
             if not log_state:
                 return None, gr.update(value="フィードバックがありません。")
-            with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8", newline="") as tmp:
+            with tempfile.NamedTemporaryFile(
+                "w",
+                delete=False,
+                encoding="utf-8",
+                newline="",
+                suffix=".tsv",
+            ) as tmp:
                 tmp.write("\t".join(LOG_HEADERS) + "\n")
                 for entry in log_state:
                     row = "\t".join(_sanitize_cell(entry[h]) for h in LOG_HEADERS)
@@ -357,7 +420,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    demo = build_app(default_backend=args.default_backend)
+    demo = build_app(default_backend=args.default_backend, theme=args.theme)
     if args.queue:
         demo = demo.queue()
     demo.launch(
@@ -366,7 +429,6 @@ def main() -> None:
         share=args.share,
         show_error=True,
         inbrowser=False,
-        theme=args.theme,
     )
 
 

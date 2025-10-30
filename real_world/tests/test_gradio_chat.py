@@ -28,16 +28,23 @@ def test_require_env_missing(monkeypatch):
 
 
 def test_build_messages_with_system_prompt():
-    history = [("hello", "hi"), ("how are you?", None)]
+    history = [
+        {"role": "user", "content": "hello"},
+        {"role": "assistant", "content": "hi"},
+        {"role": "user", "content": "how are you?"},
+    ]
     result = _build_messages(history, "next message", "system prompt")
     assert result[0] == {"role": "system", "content": "system prompt"}
     assert result[-1] == {"role": "user", "content": "next message"}
-    # ensure assistant turn missing response is skipped
-    assert {"role": "assistant", "content": "how are you?"} not in result
+    assert result[1:4] == history
 
 
 def test_format_history_compacts_conversation():
-    history = [("hi", "hello"), ("what's up?", None)]
+    history = [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "hello"},
+        {"role": "user", "content": "what's up?"},
+    ]
     text = _format_history(history)
     assert "User: hi" in text
     assert "Assistant: hello" in text
@@ -55,7 +62,10 @@ def test_sanitize_cell_replaces_control_chars():
 
 def test_chatbackend_dummy_returns_echo():
     backend = ChatBackend()
-    history: list[tuple[str, str | None]] = [("earlier question", "answer")]
+    history = [
+        {"role": "user", "content": "earlier question"},
+        {"role": "assistant", "content": "answer"},
+    ]
     messages = _build_messages(history, "Please echo me", None)
     reply = backend.generate(
         "dummy (offline echo)",
