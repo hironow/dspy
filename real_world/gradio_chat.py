@@ -169,7 +169,7 @@ def build_app(default_backend: str | None = None) -> gr.Blocks:
 
             - Select an LM backend (OpenAI helpers or a deterministic offline dummy).
             - Optional system prompt + generation controls.
-            - Label the most recent assistant reply as 👍 Good / 👎 Bad to build a quick dataset.
+            - Use the 👍 / 👎 icons on each assistant reply to quickly label and create a dataset.
             """
         )
 
@@ -213,9 +213,6 @@ def build_app(default_backend: str | None = None) -> gr.Blocks:
         send_btn = gr.Button("Send", variant="primary")
         clear_btn = gr.Button("Clear conversation")
 
-        with gr.Row():
-            mark_good = gr.Button("👍 Good", variant="secondary")
-            mark_bad = gr.Button("👎 Bad", variant="secondary")
         feedback_status = gr.Markdown("")
         feedback_table = gr.Dataframe(
             headers=LOG_HEADERS,
@@ -271,18 +268,26 @@ def build_app(default_backend: str | None = None) -> gr.Blocks:
             label: Literal["good", "bad"],
             history: list[tuple[str, str | None]],
             log_state: list[dict[str, str]],
+            index: int | None = None,
         ):
-            if not history or not history[-1][1]:
+            if not history:
                 return (
                     log_state,
                     gr.update(value=_log_rows(log_state)),
                     gr.update(value="ラベル付け可能な応答がありません。"),
                 )
-            assistant_reply = history[-1][1] or ""
+            target_idx = len(history) - 1 if index is None else max(0, min(int(index), len(history) - 1))
+            user_msg, assistant_reply = history[target_idx]
+            if not assistant_reply:
+                return (
+                    log_state,
+                    gr.update(value=_log_rows(log_state)),
+                    gr.update(value="ラベル付け可能な応答がありません。"),
+                )
             history_text = _format_history(history)
             new_entry = {
                 "timestamp": dt.datetime.now().isoformat(timespec="seconds"),
-                "user": history[-1][0],
+                "user": user_msg,
                 "assistant": assistant_reply,
                 "label": label,
                 "message": assistant_reply,
@@ -290,19 +295,24 @@ def build_app(default_backend: str | None = None) -> gr.Blocks:
             }
             new_log = list(log_state) + [new_entry]
             msg = (
-                "最新の応答を 👍 Good として記録しました。"
+                f"応答 #{target_idx + 1} を 👍 Good として記録しました。"
                 if label == "good"
-                else "最新の応答を 👎 Bad として記録しました。"
+                else f"応答 #{target_idx + 1} を 👎 Bad として記録しました。"
             )
             return new_log, gr.update(value=_log_rows(new_log)), gr.update(value=msg)
 
-        mark_good.click(
-            lambda h, s: record_feedback("good", h, s),
-            inputs=[chatbot, feedback_state],
-            outputs=[feedback_state, feedback_table, feedback_status],
-        )
-        mark_bad.click(
-            lambda h, s: record_feedback("bad", h, s),
+        def handle_like(data: gr.LikeData, history: list[tuple[str, str | None]], log_state: list[dict[str, str]]):
+            if data.liked is None:
+                return (
+                    log_state,
+                    gr.update(value=_log_rows(log_state)),
+                    gr.update(value="👍 / 👎 を選択してください。"),
+                )
+            label = "good" if data.liked else "bad"
+            return record_feedback(label, history, log_state, getattr(data, "index", None))
+
+        chatbot.like(
+            handle_like,
             inputs=[chatbot, feedback_state],
             outputs=[feedback_state, feedback_table, feedback_status],
         )

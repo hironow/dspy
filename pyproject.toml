@@ -48,6 +48,7 @@ dependencies = [
     "uvicorn>=0.29.0",
     "gradio>=5.49.1",
     "huggingface-hub>=1.0.1",
+    "weave>=0.52.11",
 ]
 
 [project.optional-dependencies]
