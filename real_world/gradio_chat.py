@@ -181,6 +181,7 @@ def _content_to_text(content: Any) -> str:
     if isinstance(content, dict):
         if "path" in content:
             try:
+                logger.debug("Found file content: {}", content["path"])
                 name = Path(content["path"]).name
             except Exception:  # pragma: no cover - defensive
                 name = str(content.get("path"))
@@ -200,6 +201,247 @@ def _gather_user_segment(history: History, assistant_index: int) -> list[str]:
             break
         user_chunks.append(_content_to_text(entry.get("content")))
     return list(reversed(user_chunks))
+
+
+def _safe_available_paths(program: Any) -> list[str]:
+    if not hasattr(program, "available_optimized_paths"):
+        return []
+    try:
+        return list(program.available_optimized_paths())
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Failed to list optimized paths: %s", exc)
+        return []
+
+
+def _format_program_info(
+    program: Any,
+    descriptor: Any | None,
+    default_placeholder: str,
+) -> tuple[str, str]:
+    modalities = getattr(descriptor, "modalities", frozenset({"text"})) if descriptor else frozenset({"text"})
+    if isinstance(modalities, set):
+        modality_set = modalities
+    else:
+        modality_set = set(modalities)
+    if modality_set in (set(), {"text"}):
+        modality_line = "入力モード: テキストのみ"
+    elif modality_set == {"image"}:
+        modality_line = "入力モード: 画像のみ"
+    elif modality_set == {"image", "text"}:
+        modality_line = "入力モード: 画像 + テキスト"
+    else:
+        modality_line = "入力モード: " + " / ".join(sorted(modality_set))
+    display = descriptor.display_name if descriptor else getattr(program, "slug", "Program")
+    info_lines = [f"**{display}**"]
+    if descriptor and descriptor.description:
+        info_lines.append("")
+        info_lines.append(descriptor.description)
+    optimized_path = getattr(program, "optimized_path", None)
+    if optimized_path:
+        info_lines.append("")
+        info_lines.append(f"使用中の最適化済みモデル: `{optimized_path}`")
+    hint = getattr(program, "input_hint", default_placeholder)
+    info_lines.append("")
+    info_lines.append(modality_line)
+    info_lines.append("")
+    info_lines.append(f"入力ヒント: {hint}")
+    return "\n".join(info_lines), hint
+
+
+def _make_program_describer(
+    descriptor_map: dict[str, Any],
+    default_placeholder: str,
+    program_none: str,
+    auto_label: str,
+):
+    def describe(slug: str):
+        if slug == program_none:
+            raw_info = "\n".join(
+                [
+                    "Raw LM chat (no DSPy program).",
+                    "",
+                    "入力モード: テキストのみ",
+                    "",
+                    "任意の System prompt を入力できます。",
+                ]
+            )
+            return (
+                gr.update(value=raw_info),
+                gr.update(placeholder=default_placeholder, value=None, interactive=True),
+                gr.update(choices=[], value=None, visible=False, interactive=False),
+                gr.update(visible=True),
+            )
+        descriptor = descriptor_map.get(slug)
+        try:
+            logger.debug("Loading program {} for description.", slug)
+            program = get_program(slug)
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.exception("Failed to load program {}: {}", slug, exc)
+            return (
+                gr.update(value=f"[ERROR] プログラム {slug} のロードに失敗しました。{exc}"),
+                gr.update(placeholder=default_placeholder, value=None, interactive=True),
+                gr.update(choices=[], value=None, visible=False, interactive=False),
+                gr.update(visible=True),
+            )
+        info_text, hint = _format_program_info(program, descriptor, default_placeholder)
+        available_paths = sorted(str(Path(p).expanduser()) for p in _safe_available_paths(program))
+        choices = [auto_label] + available_paths
+        return (
+            gr.update(value=info_text),
+            gr.update(placeholder=hint or default_placeholder, value=None, interactive=True),
+            gr.update(choices=choices, value=auto_label, visible=True, interactive=True),
+            gr.update(visible=True),
+        )
+
+    return describe
+
+
+def _make_override_handler(
+    descriptor_map: dict[str, Any],
+    default_placeholder: str,
+    program_none: str,
+    auto_label: str,
+):
+    def handle(slug: str, selection: str | None):
+        if slug == program_none:
+            raw_info = "\n".join(
+                [
+                    "Raw LM chat (no DSPy program).",
+                    "",
+                    "入力モード: テキストのみ",
+                    "",
+                    "任意の System prompt を入力できます。",
+                ]
+            )
+            return (
+                gr.update(value=None, visible=False, interactive=False),
+                gr.update(value=raw_info),
+                gr.update(visible=True),
+            )
+        descriptor = descriptor_map.get(slug)
+        program = get_program(slug)
+        choice = selection or auto_label
+        if choice == auto_label:
+            try:
+                program._load_optimized_state()
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("Failed to reload default optimized state for %s: %s", slug, exc)
+        else:
+            candidate = Path(choice).expanduser()
+            if not candidate.exists():
+                try:
+                    program._load_optimized_state()
+                except Exception:
+                    pass
+                warn_text = f"[ERROR] 指定したパスが見つかりません: {candidate}"
+                return (
+                    gr.update(value=auto_label, visible=True, interactive=True),
+                    gr.update(value=warn_text),
+                    gr.update(visible=True),
+                )
+            try:
+                logger.debug("Loading optimized state from {}", candidate)
+                program.load_state(str(candidate))
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("Failed to load optimized state from %s: %s", candidate, exc)
+                warn_text = f"[ERROR] 最適化済みモデルのロードに失敗しました: {exc}"
+                try:
+                    program._load_optimized_state()
+                except Exception:
+                    pass
+                return (
+                    gr.update(value=auto_label, visible=True, interactive=True),
+                    gr.update(value=warn_text),
+                    gr.update(visible=True),
+                )
+        info_text, _ = _format_program_info(program, descriptor, default_placeholder)
+        return (
+            gr.update(value=choice, visible=True, interactive=True),
+            gr.update(value=info_text),
+            gr.update(visible=(choice == auto_label)),
+        )
+
+    return handle
+
+
+def _make_responder(
+    manager: ChatBackend,
+    program_none: str,
+    auto_label: str,
+):
+    def respond(
+        payload: Any,
+        history: History,
+        backend: str,
+        sys_prompt: str,
+        temp: float,
+        max_tok: int,
+        program_slug: str,
+        optimized_choice: str | None,
+    ):
+        base_history = history or []
+        message_text = ""
+        attachments: list[str] = []
+        if isinstance(payload, dict):
+            attachments = [str(p) for p in (payload.get("files") or []) if isinstance(p, str)]
+            message_text = str(payload.get("text") or "").strip()
+        else:
+            message_text = str(payload or "").strip()
+
+        if not message_text and not attachments:
+            return base_history, gr.update(value=None, interactive=True)
+
+        working_history = list(base_history)
+        for file_path in attachments:
+            working_history.append({"role": "user", "content": {"path": file_path}})
+        if message_text:
+            working_history.append({"role": "user", "content": message_text})
+
+        reply: str
+        try:
+            if program_slug and program_slug != program_none:
+                if backend == "dummy (offline echo)":
+                    reply = "この DSPy プログラムを使うには実際の LM バックエンドを選択してください。"
+                else:
+                    lm = manager.require_lm(backend)
+                    program = get_program(program_slug)
+                    override_choice = optimized_choice or auto_label
+                    override_raw = "" if override_choice == auto_label else str(Path(override_choice).expanduser())
+                    effective_prompt = "" if override_raw else sys_prompt
+                    request = ProgramRequest(
+                        prompt=message_text,
+                        history=list(working_history),
+                        lm=lm,
+                        attachments=attachments,
+                        options={
+                            "system_prompt": effective_prompt,
+                            "temperature": temp,
+                            "max_tokens": max_tok,
+                            "backend": backend,
+                            "optimized_path": override_raw or None,
+                        },
+                    )
+                    result = program.run(request)
+                    reply = result.text
+            else:
+                if attachments:
+                    reply = "Raw LM chat はファイル入力に対応していません。対応する DSPy プログラムを選択してください。"
+                else:
+                    messages = _build_messages(base_history, message_text, sys_prompt)
+                    reply = manager.generate(
+                        backend,
+                        messages,
+                        temperature=temp,
+                        max_tokens=max_tok,
+                    )
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.exception("Generation failed: {}", exc)
+            reply = f"[ERROR] {exc}"
+
+        working_history.append({"role": "assistant", "content": reply})
+        return working_history, gr.update(value=None, interactive=True)
+
+    return respond
 
 
 def _resolve_theme(theme: str | None) -> Any | None:
@@ -305,111 +547,24 @@ def build_app(default_backend: str | None = None, *, theme: str | None = None) -
         send_btn = gr.Button("Send", variant="primary")
         clear_btn = gr.Button("Clear conversation")
 
-        def _format_program_info(program, descriptor):
-            display = descriptor.display_name if descriptor else program.slug
-            info_lines = [f"**{display}**"]
-            if descriptor and descriptor.description:
-                info_lines.append("")
-                info_lines.append(descriptor.description)
-            optimized_path = getattr(program, "optimized_path", None)
-            if optimized_path:
-                info_lines.append("")
-                info_lines.append(f"使用中の最適化済みモデル: `{optimized_path}`")
-            hint = getattr(program, "input_hint", default_placeholder)
-            info_lines.append("")
-            info_lines.append(f"入力ヒント: {hint}")
-            return "\n".join(info_lines), hint
-
-        def describe_program(slug: str):
-            if slug == PROGRAM_NONE:
-                return (
-                    gr.update(value="Raw LM chat (no DSPy program)."),
-                    gr.update(placeholder=default_placeholder, value=None, interactive=True),
-                    gr.update(choices=[], value=None, visible=False, interactive=False),
-                    gr.update(visible=True),
-                )
-            descriptor = descriptor_map.get(slug)
-            try:
-                program = get_program(slug)
-            except Exception as exc:  # pylint: disable=broad-except
-                logger.exception("Failed to load program {}: {}", slug, exc)
-                return (
-                    gr.update(value=f"[ERROR] プログラム {slug} のロードに失敗しました。{exc}"),
-                    gr.update(placeholder=default_placeholder, value=None, interactive=True),
-                    gr.update(choices=[], value=None, visible=False, interactive=False),
-                    gr.update(visible=True),
-                )
-            info_text, hint = _format_program_info(program, descriptor)
-            available_paths: list[str] = []
-            if hasattr(program, "available_optimized_paths"):
-                try:
-                    available_paths = program.available_optimized_paths()
-                except Exception as exc:  # pragma: no cover - defensive
-                    logger.warning("Failed to list optimized paths for %s: %s", slug, exc)
-            sorted_paths = sorted(str(Path(p).expanduser()) for p in available_paths)
-            choices = [OVERRIDE_AUTO_LABEL] + sorted_paths
-            return (
-                gr.update(value=info_text),
-                gr.update(placeholder=hint or default_placeholder, value=None, interactive=True),
-                gr.update(choices=choices, value=OVERRIDE_AUTO_LABEL, visible=True, interactive=True),
-                gr.update(visible=True),
-            )
-
+        describe_program = _make_program_describer(
+            descriptor_map,
+            default_placeholder,
+            PROGRAM_NONE,
+            OVERRIDE_AUTO_LABEL,
+        )
         program_choice.change(
             describe_program,
             inputs=[program_choice],
             outputs=[program_info, user_input, optimized_override, system_prompt],
         )
 
-        def handle_override_change(slug: str, selection: str | None):
-            if slug == PROGRAM_NONE:
-                return (
-                    gr.update(value=None, visible=False, interactive=False),
-                    gr.update(value="Raw LM chat (no DSPy program)."),
-                    gr.update(visible=True),
-                )
-            descriptor = descriptor_map.get(slug)
-            program = get_program(slug)
-            choice = selection or OVERRIDE_AUTO_LABEL
-            if choice == OVERRIDE_AUTO_LABEL:
-                try:
-                    program._load_optimized_state()
-                except Exception as exc:  # pragma: no cover - defensive
-                    logger.warning("Failed to reload default optimized state for %s: %s", slug, exc)
-            else:
-                candidate = Path(choice).expanduser()
-                if not candidate.exists():
-                    try:
-                        program._load_optimized_state()
-                    except Exception:
-                        pass
-                    warn_text = f"[ERROR] 指定したパスが見つかりません: {candidate}"
-                    return (
-                        gr.update(value=OVERRIDE_AUTO_LABEL, visible=True, interactive=True),
-                        gr.update(value=warn_text),
-                        gr.update(visible=True),
-                    )
-                try:
-                    program.load_state(str(candidate))
-                except Exception as exc:  # pragma: no cover - defensive
-                    logger.warning("Failed to load optimized state from %s: %s", candidate, exc)
-                    warn_text = f"[ERROR] 最適化済みモデルのロードに失敗しました: {exc}"
-                    try:
-                        program._load_optimized_state()
-                    except Exception:
-                        pass
-                    return (
-                        gr.update(value=OVERRIDE_AUTO_LABEL, visible=True, interactive=True),
-                        gr.update(value=warn_text),
-                        gr.update(visible=True),
-                    )
-            info_text, _ = _format_program_info(program, descriptor)
-            return (
-                gr.update(value=choice, visible=True, interactive=True),
-                gr.update(value=info_text),
-                gr.update(visible=(choice == OVERRIDE_AUTO_LABEL)),
-            )
-
+        handle_override_change = _make_override_handler(
+            descriptor_map,
+            default_placeholder,
+            PROGRAM_NONE,
+            OVERRIDE_AUTO_LABEL,
+        )
         optimized_override.change(
             handle_override_change,
             inputs=[program_choice, optimized_override],
@@ -428,83 +583,7 @@ def build_app(default_backend: str | None = None, *, theme: str | None = None) -
         export_btn = gr.Button("Export feedback TSV")
         export_file = gr.File(label="Download TSV", interactive=False)
 
-        def respond(
-            payload: Any,
-            history: History,
-            backend: str,
-            sys_prompt: str,
-            temp: float,
-            max_tok: int,
-            program_slug: str,
-            optimized_path_override: str | None,
-        ):
-            base_history = history or []
-            message_text = ""
-            attachments: list[str] = []
-            if isinstance(payload, dict):
-                attachments = [str(p) for p in (payload.get("files") or []) if isinstance(p, str)]
-                message_text = str(payload.get("text") or "").strip()
-            else:
-                message_text = str(payload or "").strip()
-
-            if not message_text and not attachments:
-                return base_history, gr.update(value=None, interactive=True)
-
-            working_history = list(base_history)
-            for file_path in attachments:
-                working_history.append({"role": "user", "content": {"path": file_path}})
-            if message_text:
-                working_history.append({"role": "user", "content": message_text})
-
-            reply: str
-            try:
-                if program_slug and program_slug != PROGRAM_NONE:
-                    if backend == "dummy (offline echo)":
-                        reply = "この DSPy プログラムを使うには実際の LM バックエンドを選択してください。"
-                    else:
-                        lm = manager.require_lm(backend)
-                        program = get_program(program_slug)
-                        override_choice = optimized_path_override or OVERRIDE_AUTO_LABEL
-                        if override_choice == OVERRIDE_AUTO_LABEL:
-                            override_raw = ""
-                        else:
-                            override_raw = str(Path(override_choice).expanduser())
-                        effective_prompt = "" if override_raw else sys_prompt
-                        request = ProgramRequest(
-                            prompt=message_text,
-                            history=list(working_history),
-                            lm=lm,
-                            attachments=attachments,
-                            options={
-                                "system_prompt": effective_prompt,
-                                "temperature": temp,
-                                "max_tokens": max_tok,
-                                "backend": backend,
-                                "optimized_path": override_raw or None,
-                            },
-                        )
-                        result = program.run(request)
-                        reply = result.text
-                else:
-                    if attachments:
-                        reply = (
-                            "Raw LM chat はファイル入力に対応していません。対応する DSPy プログラムを選択してください。"
-                        )
-                    else:
-                        messages = _build_messages(base_history, message_text, sys_prompt)
-                        reply = manager.generate(
-                            backend,
-                            messages,
-                            temperature=temp,
-                            max_tokens=max_tok,
-                        )
-            except Exception as exc:  # pylint: disable=broad-except
-                logger.exception("Generation failed: {}", exc)
-                reply = f"[ERROR] {exc}"
-
-            working_history.append({"role": "assistant", "content": reply})
-            return working_history, gr.update(value=None, interactive=True)
-
+        respond = _make_responder(manager, PROGRAM_NONE, OVERRIDE_AUTO_LABEL)
         send_btn.click(
             respond,
             inputs=[

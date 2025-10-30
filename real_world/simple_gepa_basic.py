@@ -29,11 +29,11 @@ from loguru import logger
 
 import dspy
 from real_world.cli import add_standard_args, setup_logging
-from real_world.metrics_utils import confusion_outcomes, safe_trace_log
 from real_world.cost import log_baseline_estimate, log_gepa_estimate, log_recorded_gepa_cost
 from real_world.dummy_lm import configure_dummy_adapter, make_dummy_lm_json
 from real_world.factory import basic_qa_dummy
 from real_world.helper import openai_gpt_4o_lm, openai_gpt_4o_mini_lm
+from real_world.metrics_utils import confusion_outcomes, safe_trace_log
 from real_world.utils import summarize_before_after, summarize_gepa_results
 from real_world.wandb import get_wandb_args, make_run_name
 

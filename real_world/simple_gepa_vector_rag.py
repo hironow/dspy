@@ -39,11 +39,11 @@ from real_world import data_tools as DT
 from real_world.cli import add_standard_args, setup_logging
 from real_world.cost import log_baseline_estimate, log_gepa_estimate, log_recorded_gepa_cost
 from real_world.dummy_lm import configure_dummy_adapter, make_dummy_lm_json
+from real_world.metrics_utils import confusion_outcomes, safe_trace_log
 from real_world.save import save_artifacts
 from real_world.utils import summarize_before_after, summarize_gepa_results
 from real_world.vector_adapter import Document, InMemoryTfIdfAdapter, VectorAdapter
 from real_world.wandb import get_wandb_args, make_run_name
-from real_world.metrics_utils import confusion_outcomes, safe_trace_log
 
 
 class VectorRAG(dspy.Module):

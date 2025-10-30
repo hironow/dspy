@@ -52,7 +52,7 @@ def risk_metric_gepa(
     - Logs a compact confusion outcome into trace when available.
     """
 
-    def metric(example, pred, trace=None, pred_name=None, pred_trace=None):  # noqa: ARG001 (pred_name, pred_trace unused)
+    def metric(example, pred, trace=None, pred_name=None, pred_trace=None):
         # Bind labels (allow overrides in example)
         POS = _canon(getattr(example, "answer_pos_label", "High Risk"))
         NEG = _canon(getattr(example, "answer_neg_label", "Low Risk"))

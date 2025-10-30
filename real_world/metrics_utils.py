@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 
-def confusion_outcomes(gold_pos: bool, guess_pos: bool, pred_claim: bool) -> Dict[str, int]:
+def confusion_outcomes(gold_pos: bool, guess_pos: bool, pred_claim: bool) -> dict[str, int]:
     """Return a dict with TP, FP, TN, FN given binary events.
 
     - gold_pos: whether the gold label/target is present/positive
@@ -17,7 +17,7 @@ def confusion_outcomes(gold_pos: bool, guess_pos: bool, pred_claim: bool) -> Dic
     return {"TP": TP, "FP": FP, "TN": TN, "FN": FN}
 
 
-def safe_trace_log(trace: Any, data: Dict[str, Any]) -> None:
+def safe_trace_log(trace: Any, data: dict[str, Any]) -> None:
     """Safely log a small payload to trace if available."""
     if trace is None or not hasattr(trace, "log"):
         return
