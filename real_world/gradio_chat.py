@@ -231,7 +231,7 @@ def _format_program_info(
         modality_line = "入力モード: 画像 + テキスト"
     else:
         modality_line = "入力モード: " + " / ".join(sorted(modality_set))
-    display = descriptor.display_name if descriptor else getattr(program, "slug", "Program")
+    display = descriptor.display_name if descriptor else getattr(program, "slug", "プログラム")
     info_lines = [f"**{display}**"]
     if descriptor and descriptor.description:
         info_lines.append("")
@@ -258,11 +258,11 @@ def _make_program_describer(
         if slug == program_none:
             raw_info = "\n".join(
                 [
-                    "Raw LM chat (no DSPy program).",
+                    "Raw LM チャット（プログラム無し）。",
                     "",
                     "入力モード: テキストのみ",
                     "",
-                    "任意の System prompt を入力できます。",
+                    "System prompt を自由に設定できます。",
                 ]
             )
             return (
@@ -306,11 +306,11 @@ def _make_override_handler(
         if slug == program_none:
             raw_info = "\n".join(
                 [
-                    "Raw LM chat (no DSPy program).",
+                    "Raw LM チャット（プログラム無し）。",
                     "",
                     "入力モード: テキストのみ",
                     "",
-                    "任意の System prompt を入力できます。",
+                    "System prompt を自由に設定できます。",
                 ]
             )
             return (
@@ -425,7 +425,7 @@ def _make_responder(
                     reply = result.text
             else:
                 if attachments:
-                    reply = "Raw LM chat はファイル入力に対応していません。対応する DSPy プログラムを選択してください。"
+                    reply = "LM チャット単体ではファイル入力に対応していません。DSPy プログラムを選択してください。"
                 else:
                     messages = _build_messages(base_history, message_text, sys_prompt)
                     reply = manager.generate(
@@ -480,34 +480,44 @@ def build_app(default_backend: str | None = None, *, theme: str | None = None) -
     with gr.Blocks(**blocks_kwargs) as demo:
         gr.Markdown(
             """
-            # DSPy Chat Console
+            # DSPy チャットコンソール
 
-            - Select an LM backend (OpenAI helpers or a deterministic offline dummy).
-            - Optional system prompt + generation controls.
-            - Use the 👍 / 👎 icons on each assistant reply to quickly label and create a dataset.
+            - 利用する LM バックエンドを選択します（OpenAI ヘルパーまたはダミー応答）。
+            - 任意で System prompt や生成パラメータを調整できます。
+            - 👍 / 👎 ボタンで直近の応答にフィードバックを付け、データセット化できます。
             """
         )
 
         backend_choice = gr.Dropdown(
             manager.options,
             value=default_choice,
-            label="Backend",
-            info="Choose which DSPy LM to invoke. Dummy mode requires no API keys.",
+            label="バックエンド",
+            info="利用する DSPy LM を選択してください（ダミーは API キー不要）。",
         )
         program_choice = gr.Dropdown(
             [PROGRAM_NONE] + [d.slug for d in descriptors],
             value=PROGRAM_NONE,
-            label="DSPy Program",
-            info="Select a pre-compiled GEPA program or fall back to raw LM chat.",
+            label="DSPy プログラム",
+            info="最適化済み GEPA プログラムを選ぶか、生の LM チャットを利用します。",
         )
-        program_info = gr.Markdown("Raw LM chat (no DSPy program).")
+        program_info = gr.Markdown(
+            "\n".join(
+                [
+                    "Raw LM チャット（プログラム無し）。",
+                    "",
+                    "入力モード: テキストのみ",
+                    "",
+                    "System prompt を自由に設定できます。",
+                ]
+            )
+        )
         system_prompt = gr.Textbox(
-            label="System prompt (optional)",
-            placeholder="例: あなたは丁寧な日本語で回答するアシスタントです。",
+            label="System prompt（任意）",
+            placeholder="例: 丁寧な日本語で回答してください。",
             lines=2,
         )
         optimized_override = gr.Dropdown(
-            label="Select optimized artifact",
+            label="最適化済みモデルを選択",
             choices=[],
             value=None,
             visible=False,
@@ -531,21 +541,21 @@ def build_app(default_backend: str | None = None, *, theme: str | None = None) -
             )
 
         chatbot = gr.Chatbot(
-            label="Conversation",
+            label="会話",
             height=420,
             type="messages",
         )
-        default_placeholder = "メッセージを入力するか、画像/音声をアップロードしてください。"
+        default_placeholder = "テキストを入力するか、画像／音声をアップロードしてください。"
         user_input = gr.MultimodalTextbox(
-            label="User message",
+            label="ユーザー入力",
             placeholder=default_placeholder,
             show_label=False,
             sources=["upload", "microphone"],
             file_count="multiple",
             interactive=True,
         )
-        send_btn = gr.Button("Send", variant="primary")
-        clear_btn = gr.Button("Clear conversation")
+        send_btn = gr.Button("送信", variant="primary")
+        clear_btn = gr.Button("履歴をクリア")
 
         describe_program = _make_program_describer(
             descriptor_map,
@@ -580,8 +590,8 @@ def build_app(default_backend: str | None = None, *, theme: str | None = None) -
             label="Feedback log",
         )
         feedback_state = gr.State([])  # list[dict[str, str]]
-        export_btn = gr.Button("Export feedback TSV")
-        export_file = gr.File(label="Download TSV", interactive=False)
+        export_btn = gr.Button("フィードバックを TSV に出力")
+        export_file = gr.File(label="TSV をダウンロード", interactive=False)
 
         respond = _make_responder(manager, PROGRAM_NONE, OVERRIDE_AUTO_LABEL)
         send_btn.click(
