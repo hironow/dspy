@@ -1,4 +1,4 @@
-# Gradio Chat Console Guide
+# Gradio チャットコンソール ガイド
 
 `real_world/gradio_chat.py` 提供の軽量チャット UI を活用するためのメモです。OpenAI などの既存 LM を切り替えながら、応答に Good/Bad のフィードバックを付与し、結果を TSV 形式でダウンロードできます。
 
@@ -78,7 +78,7 @@ uv run pytest real_world/tests/test_gradio_chat.py
 
 Gradio UI 自体は統合テスト対象外ですが、フィードバックテーブルに関するロジックは unit test で検証可能です。
 
-## カスタマイズ Tips
+## カスタマイズのヒント
 
 - **UI 変更**: `build_app` 内の Gradio Blocks を調整。テキストエリアの高さやボタン配置を変えるだけならこちらで完結。
 - **永続化**: フィードバック TSV を即時アップロードしたい場合は、`export_feedback` 内で S3 や DB へアップロードする処理に置き換える。

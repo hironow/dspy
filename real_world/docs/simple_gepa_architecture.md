@@ -1,4 +1,4 @@
-# Simple GEPA Architectures (v3+)
+# シンプル GEPA アーキテクチャ (v3+)
 
 以下は、このリポジトリのシンプル事例が「最適化（GEPA）後にどう動くか」のフローを、アスキーアートで表現したものです。各図の下に、Evaluate と GEPA で用いる metric が「何を最適化/評価しているか」を明記します。
 
@@ -368,7 +368,7 @@ GEPA:
                     +-----------------+-----------------+
                                       |
                                       +---------------------------> loop
-Legend / Notes:
+- 凡例 / 注意:
 - component_selector: round_robin（既定）/ all / 関数
 - add_format_failure_as_feedback: True でパース失敗も反射データへ
 - track_stats / track_best_outputs: 最適化の詳細やバッチ最良出力を保持

@@ -1,4 +1,4 @@
-# Real World TODO / FIXME Overview
+# 実世界 TODO / FIXME 一覧
 
 以下は `real_world/` 配下で確認された未対応の TODO/FIXME です。対応方針の検討や担当割り当ての際に参照してください。
 
@@ -7,6 +7,6 @@
 
 今後新しい TODO/FIXME を追加・完了した場合は、本ファイルを併せて更新してください。
 
-## Completed
+## 完了済み
 
 - `real_world/gradio_chat.py` — Gradio ベースのチャット UI（バックエンド切替と good/bad フィードバック機能付き）。フィードバックは UI 上で TSV としてエクスポート可能です。CLI から `uv run python real_world/gradio_chat.py` で起動できます。

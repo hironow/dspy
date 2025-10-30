@@ -1,4 +1,4 @@
-# GEPA × Vector RAG: Benefits and Practical Guide
+# GEPA × Vector RAG：利点と実践ガイド
 
 このメモは、外部ベクタDBを用いた RAG を GEPA（dspy.GEPA）で最適化する意義と、実装・運用の勘所を短くまとめたものです。実装例は `real_world/simple_gepa_vector_rag.py`、アダプタIFは `real_world/vector_adapter.py` を参照してください。
 
@@ -38,7 +38,7 @@
 - 入力は question と passages（retrieve 結果）
   - rewrite は一般則（固有名詞維持/同義語補完/曖昧語の明確化）、answer は根拠引用/簡潔性などの一般則を instructions に。
 
-## Metric 設計（必須の勘所）
+## メトリクス設計（必須の勘所）
 
 - モジュールスコアは決定的に：
   - 正答（EM/正規化一致）を主、根拠性（passages に解答表現が含まれるか）を副目的に。
@@ -90,13 +90,13 @@ def rag_metric(gold, pred, trace=None, pred_name=None, pred_trace=None):
     return dspy.Prediction(score=score, feedback=" ".join(fb))
 ```
 
-### groundedness 判定の代替案
+### 根拠性（groundedness）判定の代替案
 
 - 厳格一致（現在の例）: 正規化文字列の包含。決定性と安定性を優先。
 - ゆるやか一致: N-gram一致率、トークンF1、簡易類似度（未使用語除去後にしきい値）。ただし非決定性・コストに注意。
 - 引用インデックス（拡張案）: answer側で citations を返し、参照passageの一致をチェック（CoT+引用の設計と併用）。
 
-## pred_trace の把握（抜粋例）
+## pred_trace（トレース情報）の把握（抜粋例）
 
 GEPAは predictor単位で `pred_trace` を渡します。`[(predictor, inputs: dict, outputs: Prediction)]` 形式の先頭要素を参照すれば十分です。
 

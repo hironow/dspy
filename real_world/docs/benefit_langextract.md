@@ -1,4 +1,4 @@
-# GEPA × LangExtract: Benefits and Practical Guide
+# GEPA × LangExtract：利点と実践ガイド
 
 このメモは、LangExtract を GEPA（dspy.GEPA）で最適化する意義と、実装・運用の勘所を短くまとめたものです。実装例は `real_world/simple_gepa_langextract.py` を参照してください。
 
@@ -23,7 +23,7 @@
 - 入力は task / target_classes / style_hints（可変条件）
   - instructions は「一般則」。可変要件は入力として渡し、出力の品質で最適化。
 
-## Metric 設計（必須の勘所）
+## メトリクス設計（必須の勘所）
 
 - Evaluate 用はモジュール単一スコア（例: 期待抽出のカバレッジ ∈ [0,1]）。
 - GEPA 用は `dspy.Prediction(score, feedback)` を返す。
@@ -67,4 +67,3 @@
 
 要するに、GEPA は「人手で都度作る prompt/examples」を、評価可能な原則に基づいて自動・系統的に洗練し、
 再現性・説明責任・スケール性を備えた改善プロセスに変えてくれます。
-

@@ -1,8 +1,8 @@
-# Real-World GEPA Examples (v3+)
+# 実世界 GEPA 事例集 (v3+)
 
 このフォルダは、DSPy v3+ における `dspy.GEPA` の最小・実用サンプル集です。スクリプトは「ダミーLMでのローカル検証」と「本物のLMでの実行」の両方に対応し、表示・コスト見積・保存などは共通ユーティリティに切り出しています。
 
-## Quick Start
+## クイックスタート
 
 - 依存:
   - `uv add dspy gepa`
@@ -20,7 +20,7 @@
 
 ---
 
-## Scripts（最小GEPAパイプライン）
+## スクリプト（最小 GEPA パイプライン）
 
 ### simple_gepa_basic.py
 
@@ -69,7 +69,7 @@
 
 ---
 
-## Logs の見方（よく出るメッセージ）
+## ログの見方（よく出るメッセージ）
 
 - Baseline:
   - `Running baseline evaluation on N validation examples...`
@@ -87,7 +87,7 @@
 
 ---
 
-## 保存（Artifacts）
+## 保存（成果物）
 
 - `save.save_artifacts()` により `real_world/exports/` に保存
   - baseline: `<prefix>-baseline-YYYYmmdd-HHMMSS.json`
@@ -96,7 +96,7 @@
 
 ---
 
-## Shared Helpers（共通モジュール）
+## 共有ヘルパー（共通モジュール）
 
 - gradio_chat.py
   - Gradio 製の軽量チャット UI。OpenAI ヘルパーやダミー応答を切り替えて試しながら、最新応答を Good/Bad でラベル付けし、履歴付きで TSV ダウンロードが可能。
@@ -132,7 +132,7 @@
 
 ---
 
-## 使い分け（Dummy vs Real LMs）
+## 使い分け（Dummy と Real LMs）
 
 - `--dummy` を付けると DummyLM を使い、外部コールは一切不要。
 - 付けない場合は `helper` が OpenAI（既定）を初期化。
