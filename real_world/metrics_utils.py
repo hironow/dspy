@@ -26,4 +26,3 @@ def safe_trace_log(trace: Any, data: Dict[str, Any]) -> None:
     except Exception:
         # Swallow logging errors to avoid interfering with metric evaluation
         pass
-

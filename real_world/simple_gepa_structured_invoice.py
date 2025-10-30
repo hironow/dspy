@@ -166,8 +166,10 @@ def invoice_metric_with_feedback(
     vendor_ok = bool(pred_vendor) and (not gold_vendor or pred_vendor.lower() == gold_vendor.lower())
     date_ok = bool(pred_date) and _is_iso_date(pred_date) and (not gold_date or pred_date == gold_date)
     amount_ok = (pred_amount is not None) and (gold_amount is None or abs(pred_amount - gold_amount) <= 0.01)
-    currency_ok = bool(pred_currency) and (pred_currency in ISO_CURRENCIES) and (
-        not gold_currency or pred_currency == gold_currency
+    currency_ok = (
+        bool(pred_currency)
+        and (pred_currency in ISO_CURRENCIES)
+        and (not gold_currency or pred_currency == gold_currency)
     )
     gold_pos = any([bool(gold_vendor), bool(gold_date), gold_amount is not None, bool(gold_currency)])
     guess_pos = vendor_ok and date_ok and amount_ok and currency_ok

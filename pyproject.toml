@@ -46,6 +46,8 @@ dependencies = [
     "gepa[dspy]==0.0.18",
     "langextract>=1.0.9",
     "uvicorn>=0.29.0",
+    "gradio>=5.49.1",
+    "huggingface-hub>=1.0.1",
 ]
 
 [project.optional-dependencies]

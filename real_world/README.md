@@ -98,6 +98,10 @@
 
 ## Shared Helpers（共通モジュール）
 
+- gradio_chat.py
+  - Gradio 製の軽量チャット UI。OpenAI ヘルパーやダミー応答を切り替えて試しながら、最新応答を Good/Bad でラベル付けし、履歴付きで TSV ダウンロードが可能。
+  - 起動例: `uv run python real_world/gradio_chat.py --share`（CLI フラグでバックエンド初期値やテーマを指定可能）。
+
 - helper.py
   - 本物のLMを簡単に取得する小さなヘルパ（OpenAI/Anthropic）。
   - 例: `from real_world.helper import openai_gpt_4o_mini_lm` / `configure_openai(...)`。
