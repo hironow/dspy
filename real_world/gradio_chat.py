@@ -228,6 +228,7 @@ def build_app(default_backend: str | None = None, *, theme: str | None = None) -
     descriptors = [d for d in list_programs() if d.available]
     descriptor_map = {d.slug: d for d in descriptors}
     PROGRAM_NONE = "__lm_only__"
+    OVERRIDE_AUTO_LABEL = "（選択しない）最新の最適化済みモデルを使用"
 
     resolved_theme = _resolve_theme(theme)
     blocks_kwargs: dict[str, Any] = {"title": "DSPy Chat Console"}
@@ -263,6 +264,13 @@ def build_app(default_backend: str | None = None, *, theme: str | None = None) -
             placeholder="例: あなたは丁寧な日本語で回答するアシスタントです。",
             lines=2,
         )
+        optimized_override = gr.Dropdown(
+            label="Select optimized artifact",
+            choices=[],
+            value=None,
+            visible=False,
+            interactive=False,
+        )
 
         with gr.Row():
             temperature = gr.Slider(
@@ -297,22 +305,8 @@ def build_app(default_backend: str | None = None, *, theme: str | None = None) -
         send_btn = gr.Button("Send", variant="primary")
         clear_btn = gr.Button("Clear conversation")
 
-        def describe_program(slug: str):
-            if slug == PROGRAM_NONE:
-                return (
-                    gr.update(value="Raw LM chat (no DSPy program)."),
-                    gr.update(placeholder=default_placeholder, value=None, interactive=True),
-                )
-            descriptor = descriptor_map.get(slug)
-            try:
-                program = get_program(slug)
-            except Exception as exc:  # pylint: disable=broad-except
-                logger.exception("Failed to load program {}: {}", slug, exc)
-                return (
-                    gr.update(value=f"[ERROR] プログラム {slug} のロードに失敗しました。{exc}"),
-                    gr.update(placeholder=default_placeholder, value=None, interactive=True),
-                )
-            display = descriptor.display_name if descriptor else slug
+        def _format_program_info(program, descriptor):
+            display = descriptor.display_name if descriptor else program.slug
             info_lines = [f"**{display}**"]
             if descriptor and descriptor.description:
                 info_lines.append("")
@@ -324,15 +318,102 @@ def build_app(default_backend: str | None = None, *, theme: str | None = None) -
             hint = getattr(program, "input_hint", default_placeholder)
             info_lines.append("")
             info_lines.append(f"入力ヒント: {hint}")
+            return "\n".join(info_lines), hint
+
+        def describe_program(slug: str):
+            if slug == PROGRAM_NONE:
+                return (
+                    gr.update(value="Raw LM chat (no DSPy program)."),
+                    gr.update(placeholder=default_placeholder, value=None, interactive=True),
+                    gr.update(choices=[], value=None, visible=False, interactive=False),
+                    gr.update(visible=True),
+                )
+            descriptor = descriptor_map.get(slug)
+            try:
+                program = get_program(slug)
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.exception("Failed to load program {}: {}", slug, exc)
+                return (
+                    gr.update(value=f"[ERROR] プログラム {slug} のロードに失敗しました。{exc}"),
+                    gr.update(placeholder=default_placeholder, value=None, interactive=True),
+                    gr.update(choices=[], value=None, visible=False, interactive=False),
+                    gr.update(visible=True),
+                )
+            info_text, hint = _format_program_info(program, descriptor)
+            available_paths: list[str] = []
+            if hasattr(program, "available_optimized_paths"):
+                try:
+                    available_paths = program.available_optimized_paths()
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.warning("Failed to list optimized paths for %s: %s", slug, exc)
+            sorted_paths = sorted(str(Path(p).expanduser()) for p in available_paths)
+            choices = [OVERRIDE_AUTO_LABEL] + sorted_paths
             return (
-                gr.update(value="\n".join(info_lines)),
+                gr.update(value=info_text),
                 gr.update(placeholder=hint or default_placeholder, value=None, interactive=True),
+                gr.update(choices=choices, value=OVERRIDE_AUTO_LABEL, visible=True, interactive=True),
+                gr.update(visible=True),
             )
 
         program_choice.change(
             describe_program,
             inputs=[program_choice],
-            outputs=[program_info, user_input],
+            outputs=[program_info, user_input, optimized_override, system_prompt],
+        )
+
+        def handle_override_change(slug: str, selection: str | None):
+            if slug == PROGRAM_NONE:
+                return (
+                    gr.update(value=None, visible=False, interactive=False),
+                    gr.update(value="Raw LM chat (no DSPy program)."),
+                    gr.update(visible=True),
+                )
+            descriptor = descriptor_map.get(slug)
+            program = get_program(slug)
+            choice = selection or OVERRIDE_AUTO_LABEL
+            if choice == OVERRIDE_AUTO_LABEL:
+                try:
+                    program._load_optimized_state()
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.warning("Failed to reload default optimized state for %s: %s", slug, exc)
+            else:
+                candidate = Path(choice).expanduser()
+                if not candidate.exists():
+                    try:
+                        program._load_optimized_state()
+                    except Exception:
+                        pass
+                    warn_text = f"[ERROR] 指定したパスが見つかりません: {candidate}"
+                    return (
+                        gr.update(value=OVERRIDE_AUTO_LABEL, visible=True, interactive=True),
+                        gr.update(value=warn_text),
+                        gr.update(visible=True),
+                    )
+                try:
+                    program.load_state(str(candidate))
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.warning("Failed to load optimized state from %s: %s", candidate, exc)
+                    warn_text = f"[ERROR] 最適化済みモデルのロードに失敗しました: {exc}"
+                    try:
+                        program._load_optimized_state()
+                    except Exception:
+                        pass
+                    return (
+                        gr.update(value=OVERRIDE_AUTO_LABEL, visible=True, interactive=True),
+                        gr.update(value=warn_text),
+                        gr.update(visible=True),
+                    )
+            info_text, _ = _format_program_info(program, descriptor)
+            return (
+                gr.update(value=choice, visible=True, interactive=True),
+                gr.update(value=info_text),
+                gr.update(visible=(choice == OVERRIDE_AUTO_LABEL)),
+            )
+
+        optimized_override.change(
+            handle_override_change,
+            inputs=[program_choice, optimized_override],
+            outputs=[optimized_override, program_info, system_prompt],
         )
 
         feedback_status = gr.Markdown("")
@@ -355,6 +436,7 @@ def build_app(default_backend: str | None = None, *, theme: str | None = None) -
             temp: float,
             max_tok: int,
             program_slug: str,
+            optimized_path_override: str | None,
         ):
             base_history = history or []
             message_text = ""
@@ -382,20 +464,27 @@ def build_app(default_backend: str | None = None, *, theme: str | None = None) -
                     else:
                         lm = manager.require_lm(backend)
                         program = get_program(program_slug)
+                        override_choice = optimized_path_override or OVERRIDE_AUTO_LABEL
+                        if override_choice == OVERRIDE_AUTO_LABEL:
+                            override_raw = ""
+                        else:
+                            override_raw = str(Path(override_choice).expanduser())
+                        effective_prompt = "" if override_raw else sys_prompt
                         request = ProgramRequest(
                             prompt=message_text,
                             history=list(working_history),
                             lm=lm,
                             attachments=attachments,
-                        options={
-                            "system_prompt": sys_prompt,
-                            "temperature": temp,
-                            "max_tokens": max_tok,
-                            "backend": backend,
-                        },
-                    )
-                    result = program.run(request)
-                    reply = result.text
+                            options={
+                                "system_prompt": effective_prompt,
+                                "temperature": temp,
+                                "max_tokens": max_tok,
+                                "backend": backend,
+                                "optimized_path": override_raw or None,
+                            },
+                        )
+                        result = program.run(request)
+                        reply = result.text
                 else:
                     if attachments:
                         reply = (
@@ -426,6 +515,7 @@ def build_app(default_backend: str | None = None, *, theme: str | None = None) -
                 temperature,
                 max_tokens,
                 program_choice,
+                optimized_override,
             ],
             outputs=[chatbot, user_input],
         )
@@ -439,6 +529,7 @@ def build_app(default_backend: str | None = None, *, theme: str | None = None) -
                 temperature,
                 max_tokens,
                 program_choice,
+                optimized_override,
             ],
             outputs=[chatbot, user_input],
         )

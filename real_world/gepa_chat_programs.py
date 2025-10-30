@@ -109,6 +109,35 @@ class _BaseProgram(ChatProgram):
     def _predict(self, request: ProgramRequest) -> ProgramResponse:
         raise NotImplementedError
 
+    def load_state(self, path: str) -> None:
+        if not hasattr(self, "program"):
+            raise RuntimeError("Program object is not initialized.")
+        resolved = Path(path).expanduser()
+        self.program.load(str(resolved))
+        self.optimized_path = str(resolved)
+        logger.info("Manually loaded optimized state for %s from %s", self.slug, resolved)
+
+    def available_optimized_paths(self) -> list[str]:
+        prefix = getattr(self, "artifact_prefix", None)
+        if not prefix:
+            return []
+        candidates: list[Path] = []
+        slug_env = _OPTIMIZED_ENV_TEMPLATE.format(slug=self.slug.upper())
+        explicit = os.getenv(slug_env)
+        if explicit:
+            target = Path(explicit).expanduser()
+            if target.is_file():
+                candidates.append(target)
+            elif target.is_dir():
+                candidates.extend(_collect_optimized_candidates(target, prefix))
+        export_dir = Path(os.getenv(_EXPORT_DIR_ENV, "real_world/exports")).expanduser()
+        if export_dir.exists():
+            candidates.extend(_collect_optimized_candidates(export_dir, prefix))
+        unique: dict[str, Path] = {}
+        for path in candidates:
+            unique[str(path)] = path
+        return list(unique.keys())
+
     def _load_optimized_state(self) -> None:
         if not hasattr(self, "program"):
             return

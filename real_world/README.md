@@ -168,6 +168,7 @@
   - `DSPY_GEPA_EXPORT_DIR`：検索するディレクトリを一括変更
   - `DSPY_GEPA_<SLUG>_OPTIMIZED`：特定プログラムの最適化済みファイルを直接指定（例: `DSPY_GEPA_SIMPLE_GEPA_BASIC_OPTIMIZED=/path/to/file.json`）
 - 画像対応（`MultimodalTextbox`）により、`simple_gepa_multimodal_caption` や `simple_gepa_multimodal_observe_compose` などのマルチモーダル GEPA サンプルも、依存関係（`dspy.adapters.types.Image` が利用可能な環境）であればドロップダウンから直接呼び出せます。依存が不足している場合は自動的にリストから除外されます。
+- DSPy プログラムを選択すると「Select optimized artifact」ドロップダウンが出現し、先頭の「（選択しない）最新の最適化済みモデルを使用」か保存済みアーティファクト（`real_world/exports/…` など）から選べます。未選択状態では System prompt を手動で編集でき、特定ファイルを選ぶとそのモデルを即座にロードして System prompt は自動的に非表示になります。
 
 - 送信時の挙動：
   1. プログラム選択あり → `ChatBackend.require_lm()` で LM インスタンスを取得し、`ProgramRequest` を作成。
